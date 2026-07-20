@@ -1,0 +1,17 @@
+{
+  "skill_name": "spec-planner",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Create an architecture and implementation plan for a new profile page widget in Flutter. It needs to fetch the user's name, email, and avatar from an API, display it, and allow updating the name. If the network is offline, load from a local cache.",
+      "expected_output": "Should generate architecture.md, implementation_plan.md, and task.md with details on Flutter profile page widget, API fetching, and caching.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Разработай архитектуру и план реализации для сервиса синхронизации локальной базы данных SQLite с удаленным API. Синхронизация должна происходить при запуске приложения и раз в 15 минут в фоновом режиме. Нужно обрабатывать конфликты версий (сервер всегда выигрывает).",
+      "expected_output": "Should generate architecture.md, implementation_plan.md, and task.md with details on SQLite sync, background tasks, and version conflict resolution.",
+      "files": []
+    }
+  ]
+}

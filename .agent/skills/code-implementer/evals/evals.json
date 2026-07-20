@@ -1,0 +1,17 @@
+{
+  "skill_name": "code-implementer",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Implement the DrawAction entity and its subclasses (StrokeAction, ShapeAction) in Flutter based on our architecture plan. Make sure it includes JSON serialization methods.",
+      "expected_output": "Should generate entities and serialization models for DrawAction, StrokeAction, and ShapeAction in Flutter with JSON support.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Implement the DrawBloc state and events for Undo/Redo history tracking as defined in the editor architecture.",
+      "expected_output": "Should implement DrawBloc with events AddStrokeEvent, UndoEvent, RedoEvent and maintain state with history and redoStack.",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Performs an audit of the current canvas/layout files in lib/",
+      "passed": true,
+      "evidence": "The proposal directly names lib/main.dart and audits button clutter."
+    },
+    {
+      "text": "Proposes a clear Material 3 design layout optimized for tablets (e.g. NavigationRail or Sidebar)",
+      "passed": true,
+      "evidence": "Proposes a docked card-grouped sidebar layout (Option A) and a floating layout (Option B)."
+    },
+    {
+      "text": "Discusses tablet/stylus usability considerations specifically for ultrasound examination environments",
+      "passed": true,
+      "evidence": "Explains constraints of dark ultrasound examination rooms and minimum 48x48 dp hitboxes."
+    },
+    {
+      "text": "Provides a developer specification with a task list and file list (using [MODIFY] and [NEW])",
+      "passed": true,
+      "evidence": "Includes [MODIFY] main.dart and [NEW] editor_sidebar.dart along with developer task list."
+    }
+  ]
+}

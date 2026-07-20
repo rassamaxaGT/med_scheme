@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Analyzes current drawing tool selection UX in lib/main.dart",
+      "passed": false,
+      "evidence": "Does not analyze current selection path or codebase implementation of tools."
+    },
+    {
+      "text": "Proposes a stylus-friendly design pattern (e.g. radial menu or docked toolbelt)",
+      "passed": true,
+      "evidence": "Suggests a radial menu or floating toolbar."
+    },
+    {
+      "text": "Outlines specific UX interaction rules (e.g. tap-to-select, long-press to open radial)",
+      "passed": false,
+      "evidence": "Does not define interactive gestures, long-press, stylus coordinates, or release actions."
+    },
+    {
+      "text": "Provides developer tasks to implement the menu and hook it to BLoC",
+      "passed": false,
+      "evidence": "Gives basic bullet points with no class name, no BLoC events, and no Canvas integrations."
+    }
+  ]
+}

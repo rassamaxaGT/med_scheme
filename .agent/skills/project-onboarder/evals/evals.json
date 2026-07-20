@@ -1,0 +1,23 @@
+{
+  "skill_name": "project-onboarder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Hey, I just cloned this codebase. Can you get familiar with the project and tell me what the main entry points, frameworks, and architecture patterns are?",
+      "expected_output": "A structured overview pointing out the Flutter/Dart tech stack, directory structure, and lib/main.dart entry point.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Can you onboard to the project and check how we run the test suite and if there are any linting configurations?",
+      "expected_output": "Detailed instructions on running the test suite (flutter test) and the existence of analysis_options.yaml.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Explore this repository and generate a codebase context map under .agent/project_context.md so that subsequent agent sessions have immediate context.",
+      "expected_output": "Successful creation of .agent/project_context.md with correct project information according to the specified template.",
+      "files": []
+    }
+  ]
+}

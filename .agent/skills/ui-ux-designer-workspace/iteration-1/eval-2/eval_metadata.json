@@ -1,0 +1,27 @@
+{
+  "eval_id": 2,
+  "eval_name": "stylus-quick-menu",
+  "prompt": "Doctors are complaining that selecting paths (like adhesions, infiltration) takes too many taps and it's hard to do with a stylus on the go. We need to optimize the UX/UI of the drawing tool selection. Let's design a quick-access tool belt or radial menu and draft the developer task list for this.",
+  "assertions": [
+    {
+      "text": "Analyzes current drawing tool selection UX in lib/main.dart",
+      "passed": true,
+      "evidence": "Identifies that selecting path markers takes multiple taps due to a nested select menu."
+    },
+    {
+      "text": "Proposes a stylus-friendly design pattern (e.g. radial menu or docked toolbelt)",
+      "passed": true,
+      "evidence": "Proposes a floating radial overlay menu triggered by long-press or stylus button."
+    },
+    {
+      "text": "Outlines specific UX interaction rules (e.g. tap-to-select, long-press to open radial)",
+      "passed": true,
+      "evidence": "Specifies long-press with stylus triggers a custom radial popup menu directly under the nib."
+    },
+    {
+      "text": "Provides developer tasks to implement the menu and hook it to BLoC",
+      "passed": true,
+      "evidence": "Provides step-by-step developer tasks including DrawBloc event integration."
+    }
+  ]
+}

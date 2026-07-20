@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Inspects existing app configuration and theme definitions",
+      "passed": true,
+      "evidence": "Identifies the custom blue seed color 0xFF0F4C81 in main.dart."
+    },
+    {
+      "text": "Proposes a dark-mode palette tailored for ultrasound/medical clinical use cases",
+      "passed": true,
+      "evidence": "Suggests low-glare slate gray 0xFF121824 and specific semantic path colors for ultrasound markers."
+    },
+    {
+      "text": "Proposes structured design tokens (colors, typography, radii) for the design system",
+      "passed": true,
+      "evidence": "Defines custom Hex colors, elevation card values, and typography font weight preferences."
+    },
+    {
+      "text": "Outlines a clear task list for modifying the Flutter theme code",
+      "passed": true,
+      "evidence": "Includes structured [NEW] app_theme.dart and [MODIFY] main.dart tasks."
+    }
+  ]
+}

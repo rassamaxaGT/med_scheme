@@ -1,0 +1,144 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
+import 'package:archive/archive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+
+import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/project_data.dart';
+import '../../domain/entities/project_file_source.dart';
+import '../../domain/repositories/project_repository.dart';
+import '../models/draw_action_model.dart';
+import '../../presentation/widgets/canvas/canvas_painter.dart';
+import '../../../../core/utils/web_helper.dart';
+import '../../../../core/utils/image_loader.dart';
+
+ProjectRepository getProjectRepositoryPlatform() => ProjectRepositoryWebImpl();
+
+class ProjectRepositoryWebImpl implements ProjectRepository {
+  @override
+  Future<String?> requestProjectDirectory() async {
+    return 'browser'; // На Web папка сохранения не выбирается напрямую, эмулируем выбор
+  }
+
+  @override
+  Future<void> saveProject({
+    required String directoryPath,
+    required String projectName,
+    required List<DrawAction> actions,
+    required String? backgroundPath,
+  }) async {
+    final Map<String, dynamic> projectMap = {
+      'projectName': projectName,
+      'version': '3.0',
+      'actions': actions.map((a) => DrawActionModel.toJson(a)).toList(),
+    };
+
+    final jsonString = jsonEncode(projectMap);
+    final jsonBytes = utf8.encode(jsonString);
+
+    final archive = Archive();
+    archive.addFile(ArchiveFile('project.json', jsonBytes.length, jsonBytes));
+
+    if (backgroundPath != null) {
+      final bgBytes = getBlobBytes(backgroundPath);
+      if (bgBytes != null) {
+        archive.addFile(ArchiveFile('background.png', bgBytes.length, bgBytes));
+      }
+    }
+
+    final zipBytes = ZipEncoder().encode(archive);
+    if (zipBytes != null) {
+      triggerDownload(Uint8List.fromList(zipBytes), '$projectName.meddraw');
+    }
+  }
+
+  @override
+  Future<ProjectData> loadProject(ProjectFileSource source) async {
+    final bytes = source.bytes;
+    if (bytes == null) {
+      throw Exception('Данные файла проекта отсутствуют (Web)');
+    }
+
+    final archive = ZipDecoder().decodeBytes(bytes);
+    String jsonContent = '[]';
+    String? extractedBgPath;
+
+    for (final file in archive) {
+      if (file.name == 'project.json') {
+        jsonContent = utf8.decode(file.content as List<int>);
+      } else if (file.name == 'background.png') {
+        final bgBytes = Uint8List.fromList(file.content as List<int>);
+        // Создаем локальный Blob URL для веба
+        extractedBgPath = createBlobUrl(bgBytes);
+      }
+    }
+
+    final decoded = jsonDecode(jsonContent) as Map<String, dynamic>;
+    final actionsList = decoded['actions'] as List;
+
+    final actions = actionsList
+        .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    return ProjectData(actions: actions, backgroundPath: extractedBgPath);
+  }
+
+  @override
+  Future<String> exportToGallery({
+    required String directoryPath,
+    required String filename,
+    required List<DrawAction> actions,
+    required String? backgroundPath,
+  }) async {
+    // 1. Загружаем фоновое изображение
+    ui.Image? bgImage;
+    if (backgroundPath != null) {
+      bgImage = await loadUiImage(backgroundPath);
+    }
+
+    // 2. Определяем размеры холста
+    final double width = bgImage != null ? bgImage.width.toDouble() : 800.0;
+    final double height = bgImage != null ? bgImage.height.toDouble() : 600.0;
+    final size = Size(width, height);
+
+    // 3. Рисуем на PictureRecorder
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final painter = CanvasPainter(
+      history: actions,
+      backgroundImage: bgImage,
+    );
+    painter.paint(canvas, size);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width.toInt(), height.toInt());
+
+    // 4. Кодируем в PNG
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) throw Exception('Не удалось отрендерить холст');
+    final pngBytes = byteData.buffer.asUint8List();
+
+    // 5. Скачиваем файл в браузере
+    triggerDownload(pngBytes, '$filename.png');
+
+    return 'загрузки браузера';
+  }
+
+  @override
+  Future<void> saveDirectoryPath(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_directory_path', path);
+  }
+
+  @override
+  Future<String?> getSavedDirectoryPath() async {
+    if (kIsWeb) {
+      return 'browser'; // На Web всегда эмулируем выбранную папку
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('selected_directory_path');
+  }
+}

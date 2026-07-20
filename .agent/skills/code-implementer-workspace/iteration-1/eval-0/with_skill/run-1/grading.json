@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 3,
+    "failed": 0,
+    "total": 3
+  },
+  "expectations": [
+    {
+      "text": "draw_action.dart defines DrawAction with toJson",
+      "passed": true,
+      "evidence": "DrawAction abstract class with toJson defined."
+    },
+    {
+      "text": "StrokeAction has points, isEraser and fromJson",
+      "passed": true,
+      "evidence": "StrokeAction class with points, isEraser and factory fromJson defined."
+    },
+    {
+      "text": "ShapeAction has shapeType, points and fromJson",
+      "passed": true,
+      "evidence": "ShapeAction class with startPoint, endPoint, shapeType and fromJson."
+    }
+  ]
+}

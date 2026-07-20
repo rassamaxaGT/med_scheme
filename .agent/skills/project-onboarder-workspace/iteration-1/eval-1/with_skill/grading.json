@@ -1,0 +1,19 @@
+{
+  "expectations": [
+    {
+      "text": "Identifies the project as a Flutter/Dart project.",
+      "passed": true,
+      "evidence": "The output mentions Flutter and Dart as the framework and language of the project."
+    },
+    {
+      "text": "Correctly identifies lib/main.dart as the primary entry point.",
+      "passed": true,
+      "evidence": "The output points to lib/main.dart as the primary entry point."
+    },
+    {
+      "text": "Identifies Clean Architecture structure (features/editor/data, domain, presentation).",
+      "passed": true,
+      "evidence": "The output describes the Clean Architecture structure layout inside lib/features/editor."
+    }
+  ]
+}

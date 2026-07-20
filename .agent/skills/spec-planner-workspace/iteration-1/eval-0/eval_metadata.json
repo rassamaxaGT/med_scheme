@@ -1,0 +1,22 @@
+{
+  "eval_id": 0,
+  "eval_name": "profile-widget",
+  "prompt": "Create an architecture and implementation plan for a new profile page widget in Flutter. It needs to fetch the user's name, email, and avatar from an API, display it, and allow updating the name. If the network is offline, load from a local cache.",
+  "assertions": [
+    {
+      "text": "architecture.md contains references to ProfileView and caching component",
+      "passed": true,
+      "evidence": "Matches profile_view.dart and profile_cache.dart"
+    },
+    {
+      "text": "implementation_plan.md covers offline state fallback logic",
+      "passed": true,
+      "evidence": "Covers fallback to local cache in offline mode"
+    },
+    {
+      "text": "task.md lists tasks for setting up UI, data models, and services",
+      "passed": true,
+      "evidence": "Checklist includes model, services, and view setup tasks"
+    }
+  ]
+}

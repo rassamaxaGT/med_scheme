@@ -1,0 +1,27 @@
+{
+  "eval_id": 1,
+  "eval_name": "dark-medical-theme",
+  "prompt": "Let's work out a unified UI theme and design system for the whole app. It should feel clean, professional, and dark-mode oriented for medical doctors in low-light ultrasound rooms. Tell me what changes we need to make to the theme, styling, and widget colors, and write down the instructions for the developer.",
+  "assertions": [
+    {
+      "text": "Inspects existing app configuration and theme definitions",
+      "passed": true,
+      "evidence": "Finds custom blue seed color 0xFF0F4C81 in main.dart."
+    },
+    {
+      "text": "Proposes a dark-mode palette tailored for ultrasound/medical clinical use cases",
+      "passed": true,
+      "evidence": "Suggests low-fatigue charcoal/slate dark theme with high contrast blue/teal active indicators."
+    },
+    {
+      "text": "Proposes structured design tokens (colors, typography, radii) for the design system",
+      "passed": true,
+      "evidence": "Defines custom Hex color tokens and Typography sizes."
+    },
+    {
+      "text": "Outlines a clear task list for modifying the Flutter theme code",
+      "passed": true,
+      "evidence": "Provides a developer task list for ThemeData config updates."
+    }
+  ]
+}

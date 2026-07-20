@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 3,
+    "failed": 0,
+    "total": 3
+  },
+  "expectations": [
+    {
+      "text": "architecture.md contains sqflite helpers and sync service files",
+      "passed": true,
+      "evidence": "Matches db_helper.dart and sync_service.dart"
+    },
+    {
+      "text": "implementation_plan.md covers background tasks and server-wins strategy",
+      "passed": true,
+      "evidence": "Mention background worker with workmanager and Server Wins conflict resolution"
+    },
+    {
+      "text": "task.md has tasks for background sync integration",
+      "passed": true,
+      "evidence": "Checklist includes workmanager setup"
+    }
+  ]
+}

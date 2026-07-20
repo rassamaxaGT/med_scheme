@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Inspects existing app configuration and theme definitions",
+      "passed": false,
+      "evidence": "Does not inspect main.dart or identify the current custom seed color."
+    },
+    {
+      "text": "Proposes a dark-mode palette tailored for ultrasound/medical clinical use cases",
+      "passed": false,
+      "evidence": "Suggests standard generic Colors.black12 / Colors.grey[900] without medical context/rationale."
+    },
+    {
+      "text": "Proposes structured design tokens (colors, typography, radii) for the design system",
+      "passed": false,
+      "evidence": "No detailed hex codes, typography, or elevation parameters specified."
+    },
+    {
+      "text": "Outlines a clear task list for modifying the Flutter theme code",
+      "passed": false,
+      "evidence": "Gives basic bullet points with no file locations or precise Flutter modifications."
+    }
+  ]
+}

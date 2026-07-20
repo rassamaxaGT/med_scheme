@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "eval_name": "draw-bloc",
+  "prompt": "Implement the DrawBloc state and events for Undo/Redo history tracking as defined in the editor architecture.",
+  "assertions": [
+    {
+      "text": "draw_bloc.dart extends Bloc and implements undo/redo",
+      "passed": true,
+      "evidence": "DrawBloc class extends Bloc<DrawEvent, DrawState> and handles AddStrokeEvent, UndoEvent, RedoEvent."
+    },
+    {
+      "text": "draw_event.dart defines AddStroke, Undo, Redo events",
+      "passed": true,
+      "evidence": "Events class contains UndoEvent, RedoEvent, AddStrokeEvent."
+    },
+    {
+      "text": "draw_state.dart contains history and redoStack",
+      "passed": true,
+      "evidence": "DrawState includes history and redoStack."
+    }
+  ]
+}

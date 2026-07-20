@@ -1,0 +1,17 @@
+{
+  "eval_id": 2,
+  "eval_name": "identify-commands",
+  "prompt": "Can you onboard to the project and check how we run the test suite and if there are any linting configurations?",
+  "assertions": [
+    {
+      "text": "Identifies flutter test or dart test as the testing command.",
+      "passed": true,
+      "evidence": "Matches test command discovery"
+    },
+    {
+      "text": "Mentions the existence of analysis_options.yaml for linting.",
+      "passed": true,
+      "evidence": "Matches linting configuration discovery"
+    }
+  ]
+}

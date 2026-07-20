@@ -1,0 +1,17 @@
+{
+  "eval_id": 3,
+  "eval_name": "generate-context-map",
+  "prompt": "Explore this repository and generate a codebase context map under .agent/project_context.md so that subsequent agent sessions have immediate context.",
+  "assertions": [
+    {
+      "text": "Creates the file .agent/project_context.md.",
+      "passed": true,
+      "evidence": "Matches context map creation"
+    },
+    {
+      "text": "Context map conforms to the specified template with the section headings.",
+      "passed": true,
+      "evidence": "Matches template validation"
+    }
+  ]
+}

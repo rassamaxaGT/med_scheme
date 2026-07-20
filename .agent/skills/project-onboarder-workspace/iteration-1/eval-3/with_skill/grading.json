@@ -1,0 +1,14 @@
+{
+  "expectations": [
+    {
+      "text": "Creates the file .agent/project_context.md.",
+      "passed": true,
+      "evidence": "The file .agent/project_context.md was successfully written to the codebase."
+    },
+    {
+      "text": "Context map conforms to the specified template with the section headings.",
+      "passed": true,
+      "evidence": "The context map contains all the headings from the template in SKILL.md."
+    }
+  ]
+}

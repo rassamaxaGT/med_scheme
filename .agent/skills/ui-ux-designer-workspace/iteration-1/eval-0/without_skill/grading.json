@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "Performs an audit of the current canvas/layout files in lib/",
+      "passed": false,
+      "evidence": "Does not perform any code audit of main.dart, just gives generic ideas."
+    },
+    {
+      "text": "Proposes a clear Material 3 design layout optimized for tablets (e.g. NavigationRail or Sidebar)",
+      "passed": true,
+      "evidence": "Briefly suggests a row with sidebar."
+    },
+    {
+      "text": "Discusses tablet/stylus usability considerations specifically for ultrasound examination environments",
+      "passed": false,
+      "evidence": "No mention of medical environment, stylus constraints, or stylus sizing rules."
+    },
+    {
+      "text": "Provides a developer specification with a task list and file list (using [MODIFY] and [NEW])",
+      "passed": false,
+      "evidence": "No structured file designations like [MODIFY]/[NEW] or explicit design tokens."
+    }
+  ]
+}

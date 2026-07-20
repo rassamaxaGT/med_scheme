@@ -1,0 +1,27 @@
+{
+  "eval_id": 0,
+  "eval_name": "tablet-m3-layout",
+  "prompt": "I want to improve the main editor screen's layout. Currently, we have buttons for tools and shapes everywhere. Can you look at our canvas and editor code, propose a modern Material 3 layout for tablets, and give me a task list for the programmer?",
+  "assertions": [
+    {
+      "text": "Performs an audit of the current canvas/layout files in lib/",
+      "passed": true,
+      "evidence": "The proposal analyzes EditorScreen in lib/main.dart and canvas widgets."
+    },
+    {
+      "text": "Proposes a clear Material 3 design layout optimized for tablets (e.g. NavigationRail or Sidebar)",
+      "passed": true,
+      "evidence": "Proposes a structured 2-column sidebar layout utilizing NavigationRail/NavigationDrawer."
+    },
+    {
+      "text": "Discusses tablet/stylus usability considerations specifically for ultrasound examination environments",
+      "passed": true,
+      "evidence": "Mentions low-light room constraints and minimum 48x48 dp touch target sizes for stylus."
+    },
+    {
+      "text": "Provides a developer specification with a task list and file list (using [MODIFY] and [NEW])",
+      "passed": true,
+      "evidence": "Contains a structured task list with [MODIFY] main.dart and [NEW] widgets."
+    }
+  ]
+}

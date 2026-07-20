@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 3,
+    "failed": 0,
+    "total": 3
+  },
+  "expectations": [
+    {
+      "text": "draw_bloc.dart extends Bloc and implements undo/redo",
+      "passed": true,
+      "evidence": "DrawBloc class extends Bloc<DrawEvent, DrawState> and handles AddStrokeEvent, UndoEvent, RedoEvent."
+    },
+    {
+      "text": "draw_event.dart defines AddStroke, Undo, Redo events",
+      "passed": true,
+      "evidence": "Events class contains UndoEvent, RedoEvent, AddStrokeEvent."
+    },
+    {
+      "text": "draw_state.dart contains history and redoStack",
+      "passed": true,
+      "evidence": "DrawState includes history and redoStack."
+    }
+  ]
+}

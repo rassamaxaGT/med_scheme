@@ -1,0 +1,31 @@
+{
+  "skill_name": "ui-ux-designer",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I want to improve the main editor screen's layout. Currently, we have buttons for tools and shapes everywhere. Can you look at our canvas and editor code, propose a modern Material 3 layout for tablets, and give me a task list for the programmer?",
+      "expected_output": "The agent should analyze the current editor UI, propose a structured layout tailored for tablets, discuss ideas (like sidebar/toolbar, stylus accommodations), and write a clear programmer-oriented task list.",
+      "files": [
+        "d:/projects/med_scheme/lib/main.dart",
+        "d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Let's work out a unified UI theme and design system for the whole app. It should feel clean, professional, and dark-mode oriented for medical doctors in low-light ultrasound rooms. Tell me what changes we need to make to the theme, styling, and widget colors, and write down the instructions for the developer.",
+      "expected_output": "The agent should inspect the styling configs, recommend custom colors (e.g. high-contrast medical dark theme, soft blue accents), discuss options with the user, and prepare a style guide/task list for the developer.",
+      "files": [
+        "d:/projects/med_scheme/lib/main.dart",
+        "d:/projects/med_scheme/lib/core/di/injection.dart"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Doctors are complaining that selecting paths (like adhesions, infiltration) takes too many taps and it's hard to do with a stylus on the go. We need to optimize the UX/UI of the drawing tool selection. Let's design a quick-access tool belt or radial menu and draft the developer task list for this.",
+      "expected_output": "The agent should analyze the tool selection widgets, propose a quick-access UI solution (like stylus-friendly floating menu or tool belt), collaborate with the user on details, and generate developer implementation tasks.",
+      "files": [
+        "d:/projects/med_scheme/lib/main.dart"
+      ]
+    }
+  ]
+}

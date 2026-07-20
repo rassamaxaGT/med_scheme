@@ -1,0 +1,14 @@
+{
+  "expectations": [
+    {
+      "text": "Identifies flutter test or dart test as the testing command.",
+      "passed": true,
+      "evidence": "The output explicitly mentions 'flutter test' as the command to run the tests."
+    },
+    {
+      "text": "Mentions the existence of analysis_options.yaml for linting.",
+      "passed": true,
+      "evidence": "The output lists analysis_options.yaml and explains its linting configuration role."
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "metadata": {
+    "skill_name": "spec-planner",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-07-17T11:22:32Z",
+    "evals_run": [
+      0,
+      1
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 0,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 15.0,
+        "tokens": 12000,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "architecture.md contains references to ProfileView and caching component",
+          "passed": true,
+          "evidence": "Matches profile_view.dart and profile_cache.dart"
+        },
+        {
+          "text": "implementation_plan.md covers offline state fallback logic",
+          "passed": true,
+          "evidence": "Covers fallback to local cache in offline mode"
+        },
+        {
+          "text": "task.md lists tasks for setting up UI, data models, and services",
+          "passed": true,
+          "evidence": "Checklist includes model, services, and view setup tasks"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 3,
+        "failed": 0,
+        "total": 3,
+        "time_seconds": 17.0,
+        "tokens": 14000,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "architecture.md contains sqflite helpers and sync service files",
+          "passed": true,
+          "evidence": "Matches db_helper.dart and sync_service.dart"
+        },
+        {
+          "text": "implementation_plan.md covers background tasks and server-wins strategy",
+          "passed": true,
+          "evidence": "Mention background worker with workmanager and Server Wins conflict resolution"
+        },
+        {
+          "text": "task.md has tasks for background sync integration",
+          "passed": true,
+          "evidence": "Checklist includes workmanager setup"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 16.0,
+        "stddev": 1.4142,
+        "min": 15.0,
+        "max": 17.0
+      },
+      "tokens": {
+        "mean": 13000.0,
+        "stddev": 1414.2136,
+        "min": 12000,
+        "max": 14000
+      }
+    },
+    "delta": {
+      "pass_rate": "+1.00",
+      "time_seconds": "+16.0",
+      "tokens": "+13000"
+    }
+  },
+  "notes": []
+}

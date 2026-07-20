@@ -1,0 +1,22 @@
+{
+  "eval_id": 0,
+  "eval_name": "draw-action-entities",
+  "prompt": "Implement the DrawAction entity and its subclasses (StrokeAction, ShapeAction) in Flutter based on our architecture plan. Make sure it includes JSON serialization methods.",
+  "assertions": [
+    {
+      "text": "draw_action.dart defines DrawAction with toJson",
+      "passed": true,
+      "evidence": "DrawAction abstract class with toJson defined."
+    },
+    {
+      "text": "StrokeAction has points, isEraser and fromJson",
+      "passed": true,
+      "evidence": "StrokeAction class with points, isEraser and factory fromJson defined."
+    },
+    {
+      "text": "ShapeAction has shapeType, points and fromJson",
+      "passed": true,
+      "evidence": "ShapeAction class with startPoint, endPoint, shapeType and fromJson."
+    }
+  ]
+}

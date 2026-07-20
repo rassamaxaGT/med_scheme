@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "eval_name": "identify-architecture",
+  "prompt": "Hey, I just cloned this codebase. Can you get familiar with the project and tell me what the main entry points, frameworks, and architecture patterns are?",
+  "assertions": [
+    {
+      "text": "Identifies the project as a Flutter/Dart project.",
+      "passed": true,
+      "evidence": "Matches framework detection"
+    },
+    {
+      "text": "Correctly identifies lib/main.dart as the primary entry point.",
+      "passed": true,
+      "evidence": "Matches entry point identification"
+    },
+    {
+      "text": "Identifies Clean Architecture structure (features/editor/data, domain, presentation).",
+      "passed": true,
+      "evidence": "Matches architecture pattern identification"
+    }
+  ]
+}
