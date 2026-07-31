@@ -19,11 +19,12 @@ class FakeProjectRepository implements ProjectRepository {
     required String projectName,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
   }) async {}
 
   @override
   Future<ProjectData> loadProject(ProjectFileSource source) async {
-    return ProjectData(actions: [], backgroundPath: null);
+    return ProjectData(actions: [], backgroundPath: null, patientId: null);
   }
 
   @override
@@ -32,7 +33,17 @@ class FakeProjectRepository implements ProjectRepository {
     required String filename,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
   }) async => 'test_output_path.png';
+
+  @override
+  Future<String> exportToPdf({
+    required String directoryPath,
+    required String filename,
+    required List<DrawAction> actions,
+    required String? backgroundPath,
+    required String? patientId,
+  }) async => 'test_output_path.pdf';
 
   @override
   Future<void> saveDirectoryPath(String path) async {}
@@ -40,6 +51,7 @@ class FakeProjectRepository implements ProjectRepository {
   @override
   Future<String?> getSavedDirectoryPath() async => 'test_dir';
 }
+
 
 void main() {
   setUp(() {

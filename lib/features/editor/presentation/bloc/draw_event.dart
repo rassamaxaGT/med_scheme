@@ -48,3 +48,39 @@ class SetHistoryEvent extends DrawEvent {
   final List<DrawAction> history;
   SetHistoryEvent(this.history);
 }
+
+class SetPatientIdEvent extends DrawEvent {
+  final String patientId;
+  SetPatientIdEvent(this.patientId);
+}
+
+class ChangeFigoTypeEvent extends DrawEvent {
+  final String figoType;
+  ChangeFigoTypeEvent(this.figoType);
+}
+
+class ToggleLineDashedEvent extends DrawEvent {
+  final bool isDashed;
+  ToggleLineDashedEvent(this.isDashed);
+}
+
+class ImportCustomStampEvent extends DrawEvent {
+  final String path;
+  ImportCustomStampEvent(this.path);
+}
+
+class SelectCustomStampEvent extends DrawEvent {
+  final String path;
+  SelectCustomStampEvent(this.path);
+}
+
+class UpdateHistoryWithoutUndoEvent extends DrawEvent {
+  final List<DrawAction> history;
+  UpdateHistoryWithoutUndoEvent(this.history);
+}
+
+class SaveUndoStateEvent extends DrawEvent {
+  final List<DrawAction> undoState;
+  SaveUndoStateEvent(this.undoState);
+}
+

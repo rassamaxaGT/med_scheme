@@ -12,6 +12,7 @@ abstract class ProjectRepository {
     required String projectName,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
   });
 
   /// Загружает проект из ZIP-контейнера (.meddraw) и возвращает данные проекта
@@ -23,6 +24,16 @@ abstract class ProjectRepository {
     required String filename,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
+  });
+
+  /// Экспортирует холст с разметкой в PDF-отчет
+  Future<String> exportToPdf({
+    required String directoryPath,
+    required String filename,
+    required List<DrawAction> actions,
+    required String? backgroundPath,
+    required String? patientId,
   });
 
   /// Сохраняет путь к выбранной директории локально
@@ -31,3 +42,4 @@ abstract class ProjectRepository {
   /// Возвращает локально сохраненный путь к директории
   Future<String?> getSavedDirectoryPath();
 }
+

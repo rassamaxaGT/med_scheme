@@ -1,6 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../domain/entities/draw_action.dart';
+import '../../bloc/draw_bloc.dart';
+import '../../bloc/draw_event.dart';
 
 enum ToolboxOrientation { horizontal, verticalLeft, verticalRight }
 
@@ -149,24 +153,33 @@ class FloatingToolbox extends StatelessWidget {
                     _buildToolButton(
                       context,
                       tool: ToolType.infiltrate,
-                      label: 'Колючки',
-                      tooltip: 'Инфильтрат (колючки)',
+                      label: 'Инфильтрат',
+                      tooltip: 'Инфильтрат (волнистый эллипс)',
                       icon: Icons.blur_linear,
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
                       context,
                       tool: ToolType.adhesions,
-                      label: 'Паутина',
+                      label: 'Спайки',
                       tooltip: 'Спайки (паутина)',
                       icon: Icons.grain,
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
                       context,
+                      tool: ToolType.fibrosis,
+                      label: 'Фиброз',
+                      tooltip: 'Фиброз (кисть со штриховкой)',
+                      icon: Icons.linear_scale,
+                      isVertical: isVertical,
+                    ),
+
+                    _buildToolButton(
+                      context,
                       tool: ToolType.endometrioma,
-                      label: 'Коричн.',
-                      tooltip: 'Эндометриома (коричневая)',
+                      label: 'Эндометриома',
+                      tooltip: 'Эндометриома (коричневый круг)',
                       icon: Icons.circle,
                       customColor: const Color(0xFF5C4033),
                       isVertical: isVertical,
@@ -174,8 +187,8 @@ class FloatingToolbox extends StatelessWidget {
                     _buildToolButton(
                       context,
                       tool: ToolType.myoma,
-                      label: 'Розовый',
-                      tooltip: 'Миома (розовая)',
+                      label: 'Миома FIGO',
+                      tooltip: 'Миома по классификации FIGO',
                       icon: Icons.circle_outlined,
                       customColor: const Color(0xFFFF69B4),
                       isVertical: isVertical,
@@ -183,7 +196,7 @@ class FloatingToolbox extends StatelessWidget {
                     _buildToolButton(
                       context,
                       tool: ToolType.iud,
-                      label: 'Спираль',
+                      label: 'ВМС',
                       tooltip: 'ВМС (спираль)',
                       icon: Icons.webhook,
                       isVertical: isVertical,
@@ -192,18 +205,27 @@ class FloatingToolbox extends StatelessWidget {
                       context,
                       tool: ToolType.foci,
                       label: 'Очаг',
-                      tooltip: 'Очаги (штамп-пятно)',
+                      tooltip: 'Очаг эндометриоза',
                       icon: Icons.bubble_chart,
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
                       context,
+                      tool: ToolType.customStamp,
+                      label: 'PNG Штамп',
+                      tooltip: 'Пользовательский штамп (PNG)',
+                      icon: Icons.image_outlined,
+                      isVertical: isVertical,
+                    ),
+                    _buildToolButton(
+                      context,
                       tool: ToolType.arrow,
-                      label: 'Стрелка',
-                      tooltip: 'Стрелка с текстом',
+                      label: 'Расстояние',
+                      tooltip: 'Линия измерения расстояния',
                       icon: Icons.arrow_outward,
                       isVertical: isVertical,
                     ),
+
                     SizedBox(
                       width: isVertical ? 0.0 : 4.0,
                       height: isVertical ? 4.0 : 0.0,
@@ -368,6 +390,10 @@ class SettingsBubble extends StatelessWidget {
   final ValueChanged<Color> onColorChanged;
   final ValueChanged<double> onThicknessChanged;
   final ToolboxOrientation orientation;
+  final String currentFigoType;
+  final ValueChanged<String> onFigoTypeChanged;
+  final bool currentLineDashed;
+  final ValueChanged<bool> onLineDashedChanged;
 
   const SettingsBubble({
     super.key,
@@ -377,24 +403,313 @@ class SettingsBubble extends StatelessWidget {
     required this.onColorChanged,
     required this.onThicknessChanged,
     required this.orientation,
+    required this.currentFigoType,
+    required this.onFigoTypeChanged,
+    required this.currentLineDashed,
+    required this.onLineDashedChanged,
   });
+
+  Widget _buildFigoSelector(BuildContext context, bool isVertical) {
+    final figoTypes = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '2-5'];
+    
+    Color getFigoColor(String type) {
+      if (type == '0' || type == '1' || type == '2') return const Color(0xFFE91E63);
+      if (type == '3' || type == '4') return const Color(0xFF1976D2);
+      if (type == '5' || type == '6' || type == '7') return const Color(0xFF388E3C);
+      if (type == '8') return const Color(0xFF757575);
+      return const Color(0xFF9C27B0); // Hybrid
+    }
+
+    final children = figoTypes.map((type) {
+      final isSelected = currentFigoType == type;
+      final color = getFigoColor(type);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1.0),
+        child: GestureDetector(
+          onTap: () => onFigoTypeChanged(type),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: isSelected ? color : color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isSelected ? Colors.white : color.withValues(alpha: 0.4),
+                width: 1.0,
+              ),
+            ),
+            child: Text(
+              type,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : Colors.white70,
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+
+    return isVertical
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('FIGO', style: TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Wrap(
+                direction: Axis.vertical,
+                spacing: 4,
+                children: children,
+              ),
+            ],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('FIGO:', style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 6),
+              ...children,
+            ],
+          );
+  }
+
+  Widget _buildDashedToggle(BuildContext context, bool isVertical) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Пунктир', style: TextStyle(fontSize: 11, color: Colors.white70)),
+        Checkbox(
+          value: currentLineDashed,
+          activeColor: Theme.of(context).colorScheme.primary,
+          onChanged: (val) {
+            if (val != null) onLineDashedChanged(val);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomStampsSelector(BuildContext context, bool isVertical) {
+    final drawBloc = context.read<DrawBloc>();
+    final state = drawBloc.state;
+    final stamps = state.customStamps;
+    final activePath = state.customStampPath;
+
+    Future<void> pickStamp() async {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['png'],
+      );
+      if (result != null && result.files.single.path != null) {
+        drawBloc.add(ImportCustomStampEvent(result.files.single.path!));
+      }
+    }
+
+    final children = <Widget>[
+      ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white.withValues(alpha: 0.1),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        icon: const Icon(Icons.add, size: 14),
+        label: const Text('Загрузить PNG', style: TextStyle(fontSize: 11)),
+        onPressed: pickStamp,
+      ),
+      if (stamps.isNotEmpty) ...[
+        const SizedBox(width: 8, height: 8),
+        ...stamps.map((path) {
+          final isSelected = activePath == path;
+          final filename = path.split(RegExp(r'[/\\]')).last;
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
+            child: GestureDetector(
+              onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected ? Colors.white : Colors.white24,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.image, size: 12, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(
+                      filename.length > 10 ? '${filename.substring(0, 8)}..' : filename,
+                      style: const TextStyle(fontSize: 10, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ] else ...[
+        const SizedBox(width: 8, height: 8),
+        const Text(
+          'Загрузите PNG штампы',
+          style: TextStyle(fontSize: 10, color: Colors.white38, fontStyle: FontStyle.italic),
+        ),
+      ]
+    ];
+
+    return isVertical
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          );
+  }
+
+  Future<void> _openAdvancedColorPicker(BuildContext context) async {
+    final gridColors = [
+      Colors.black, Colors.white, Colors.grey, Colors.red, Colors.pink, Colors.purple,
+      Colors.deepPurple, Colors.indigo, Colors.blue, Colors.lightBlue, Colors.cyan, Colors.teal,
+      Colors.green, Colors.lightGreen, Colors.lime, Colors.yellow, Colors.amber, Colors.orange,
+      Colors.deepOrange, Colors.brown, Colors.blueGrey
+    ];
+    Color selectedColor = currentColor;
+    final hexController = TextEditingController(
+      text: '#${currentColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+    );
+
+    final color = await showDialog<Color>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Выбор цвета'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Сетка стандартных цветов
+                  SizedBox(
+                    width: 280,
+                    height: 120,
+                    child: GridView.builder(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 7,
+                        crossAxisSpacing: 6,
+                        mainAxisSpacing: 6,
+                      ),
+                      itemCount: gridColors.length,
+                      itemBuilder: (context, index) {
+                        final color = gridColors[index];
+                        final isSelected = selectedColor.toARGB32() == color.toARGB32();
+                        return GestureDetector(
+                          onTap: () {
+                            setDialogState(() {
+                              selectedColor = color;
+                              hexController.text = '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected ? Colors.white : Colors.white24,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Поле для ручного HEX-кода
+                  Row(
+                    children: [
+                      const Text('HEX: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: TextField(
+                          controller: hexController,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: const InputDecoration(
+                            hintText: '#FF0000',
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          ),
+                          onChanged: (val) {
+                            final cleanHex = val.replaceAll('#', '');
+                            if (cleanHex.length == 6) {
+                              final intValue = int.tryParse(cleanHex, radix: 16);
+                              if (intValue != null) {
+                                setDialogState(() {
+                                  selectedColor = Color(0xFF000000 | intValue);
+                                });
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: selectedColor,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext, selectedColor),
+                  child: const Text('Выбрать'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (color != null) {
+      onColorChanged(color);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final bool showColor = currentTool == ToolType.pencil ||
-        currentTool == ToolType.infiltrate ||
         currentTool == ToolType.adhesions ||
+        currentTool == ToolType.fibrosis ||
         currentTool == ToolType.arrow ||
+        currentTool == ToolType.iud ||
         currentTool == ToolType.foci;
 
     final bool showThickness = currentTool == ToolType.pencil ||
-        currentTool == ToolType.infiltrate ||
         currentTool == ToolType.adhesions ||
+        currentTool == ToolType.fibrosis ||
         currentTool == ToolType.arrow ||
-        currentTool == ToolType.eraser ||
-        currentTool == ToolType.endometrioma ||
-        currentTool == ToolType.myoma ||
-        currentTool == ToolType.iud;
+        currentTool == ToolType.eraser;
+
+    final bool showCustomStamps = currentTool == ToolType.customStamp;
 
     final colors = [
       const Color(0xFF000000), // Черный
@@ -432,6 +747,17 @@ class SettingsBubble extends StatelessWidget {
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (currentTool == ToolType.myoma) ...[
+                          _buildFigoSelector(context, true),
+                          const SizedBox(height: 12),
+                        ],
+                        if (currentTool == ToolType.arrow) ...[
+                          _buildDashedToggle(context, true),
+                          const SizedBox(height: 12),
+                        ],
+                        if (showCustomStamps) ...[
+                          _buildCustomStampsSelector(context, true),
+                        ],
                         if (showColor) ...[
                           // Выбор цвета (вертикальный)
                           ...colors.map((color) {
@@ -455,6 +781,17 @@ class SettingsBubble extends StatelessWidget {
                               ),
                             );
                           }),
+                          GestureDetector(
+                            onTap: () => _openAdvancedColorPicker(context),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 4.0),
+                              child: Icon(
+                                Icons.add_circle_outline,
+                                size: 22,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
                           if (showThickness)
                             Container(
                               width: 16,
@@ -514,6 +851,27 @@ class SettingsBubble extends StatelessWidget {
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (currentTool == ToolType.myoma) ...[
+                          _buildFigoSelector(context, false),
+                          Container(
+                            height: 16,
+                            width: 1,
+                            color: Colors.white24,
+                            margin: const EdgeInsets.symmetric(horizontal: 12.0),
+                          ),
+                        ],
+                        if (currentTool == ToolType.arrow) ...[
+                          _buildDashedToggle(context, false),
+                          Container(
+                            height: 16,
+                            width: 1,
+                            color: Colors.white24,
+                            margin: const EdgeInsets.symmetric(horizontal: 12.0),
+                          ),
+                        ],
+                        if (showCustomStamps) ...[
+                          _buildCustomStampsSelector(context, false),
+                        ],
                         if (showColor) ...[
                           // Выбор цвета (горизонтальный)
                           ...colors.map((color) {
@@ -537,6 +895,17 @@ class SettingsBubble extends StatelessWidget {
                               ),
                             );
                           }),
+                          GestureDetector(
+                            onTap: () => _openAdvancedColorPicker(context),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4.0),
+                              child: Icon(
+                                Icons.add_circle_outline,
+                                size: 22,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
                           if (showThickness)
                             Container(
                               height: 16,

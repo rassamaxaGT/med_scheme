@@ -9,6 +9,11 @@ class DrawState {
   final Color currentColor;
   final double currentStrokeWidth;
   final String? backgroundPath;
+  final String patientId;
+  final String currentFigoType;
+  final bool currentLineDashed;
+  final String? customStampPath;
+  final List<String> customStamps;
 
   DrawState({
     required this.history,
@@ -18,6 +23,11 @@ class DrawState {
     required this.currentColor,
     required this.currentStrokeWidth,
     this.backgroundPath,
+    required this.patientId,
+    required this.currentFigoType,
+    required this.currentLineDashed,
+    this.customStampPath,
+    required this.customStamps,
   });
 
   factory DrawState.initial() {
@@ -26,9 +36,14 @@ class DrawState {
       undoStack: [],
       redoStack: [],
       currentTool: ToolType.pencil,
-      currentColor: const Color(0xFF000000), // По умолчанию черный цвет
+      currentColor: const Color(0xFF000000),
       currentStrokeWidth: 4.0,
       backgroundPath: null,
+      patientId: '',
+      currentFigoType: '0',
+      currentLineDashed: false,
+      customStampPath: null,
+      customStamps: [],
     );
   }
 
@@ -41,6 +56,11 @@ class DrawState {
     double? currentStrokeWidth,
     String? backgroundPath,
     bool clearBackground = false,
+    String? patientId,
+    String? currentFigoType,
+    bool? currentLineDashed,
+    String? customStampPath,
+    List<String>? customStamps,
   }) {
     return DrawState(
       history: history ?? this.history,
@@ -50,6 +70,12 @@ class DrawState {
       currentColor: currentColor ?? this.currentColor,
       currentStrokeWidth: currentStrokeWidth ?? this.currentStrokeWidth,
       backgroundPath: clearBackground ? null : (backgroundPath ?? this.backgroundPath),
+      patientId: patientId ?? this.patientId,
+      currentFigoType: currentFigoType ?? this.currentFigoType,
+      currentLineDashed: currentLineDashed ?? this.currentLineDashed,
+      customStampPath: customStampPath ?? this.customStampPath,
+      customStamps: customStamps ?? this.customStamps,
     );
   }
 }
+

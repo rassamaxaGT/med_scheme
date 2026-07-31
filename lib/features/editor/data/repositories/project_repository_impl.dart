@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 import 'package:archive/archive_io.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
@@ -111,10 +113,12 @@ class ProjectRepositoryImpl implements ProjectRepository {
     required String projectName,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
   }) async {
     final Map<String, dynamic> projectMap = {
       'projectName': projectName,
       'version': '3.0',
+      'patientId': patientId,
       'actions': actions.map((a) => DrawActionModel.toJson(a)).toList(),
     };
 
@@ -185,9 +189,14 @@ class ProjectRepositoryImpl implements ProjectRepository {
 
     final decoded = jsonDecode(result.jsonContent) as Map<String, dynamic>;
     final actionsList = decoded['actions'] as List;
+    final patientId = decoded['patientId'] as String?;
 
     final actions = actionsList.map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>)).toList();
-    return ProjectData(actions: actions, backgroundPath: result.extractedBackgroundPath);
+    return ProjectData(
+      actions: actions,
+      backgroundPath: result.extractedBackgroundPath,
+      patientId: patientId,
+    );
   }
 
   @override
@@ -196,6 +205,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
     required String filename,
     required List<DrawAction> actions,
     required String? backgroundPath,
+    required String? patientId,
   }) async {
     // 1. Загружаем фоновое изображение
     ui.Image? bgImage;
@@ -221,6 +231,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
     final painter = CanvasPainter(
       history: actions,
       backgroundImage: bgImage,
+      patientId: patientId,
     );
     painter.paint(canvas, size);
 
@@ -264,6 +275,178 @@ class ProjectRepositoryImpl implements ProjectRepository {
   }
 
   @override
+  Future<String> exportToPdf({
+    required String directoryPath,
+    required String filename,
+    required List<DrawAction> actions,
+    required String? backgroundPath,
+    required String? patientId,
+  }) async {
+    // 1. Загружаем фоновое изображение
+    ui.Image? bgImage;
+    if (backgroundPath != null) {
+      final file = File(backgroundPath);
+      if (file.existsSync()) {
+        final bytes = file.readAsBytesSync();
+        final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        bgImage = frame.image;
+      }
+    }
+
+    // 2. Определяем размеры холста
+    final double width = bgImage != null ? bgImage.width.toDouble() : 800.0;
+    final double height = bgImage != null ? bgImage.height.toDouble() : 600.0;
+    final size = Size(width, height);
+
+    // 3. Рисуем на PictureRecorder
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final painter = CanvasPainter(
+      history: actions,
+      backgroundImage: bgImage,
+      patientId: patientId,
+    );
+    painter.paint(canvas, size);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width.toInt(), height.toInt());
+
+    // 4. Кодируем в PNG
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) throw Exception('Не удалось отрендерить холст');
+    final pngBytes = byteData.buffer.asUint8List();
+
+    // 5. Генерируем PDF
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+
+              pw.Text(
+                'Медицинский отчет УЗИ',
+                style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Пациент: ${patientId ?? "Не указан"}',
+                style: pw.TextStyle(fontSize: 16),
+              ),
+              pw.Text(
+                'Дата исследования: ${DateTime.now().toLocal().toString().split('.')[0]}',
+                style: pw.TextStyle(fontSize: 12),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Expanded(
+                child: pw.Center(
+                  child: pw.Image(
+                    pw.MemoryImage(pngBytes),
+                    fit: pw.BoxFit.contain,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+
+    // Добавляем страницу легенды
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Легенда условных обозначений (Sonocontreras)',
+                style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 16),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Эндометриоз Column
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('КАРТА ЭНДОМЕТРИОЗА', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                        pw.SizedBox(height: 8),
+                        pw.Text('• Инфильтрат — коричневый волнистый эллипс'),
+                        pw.Text('• Эндометриома — сплошной коричневый круг'),
+                        pw.Text('• Очаги — мелкие коричневые пятна'),
+                        pw.Text('• Спайки — тонкая сеточка ("паутина")'),
+                        pw.Text('• Фиброз — сплошная линия со штриховкой'),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 32),
+                  // Миомы Column
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('КЛАССИФИКАЦИЯ МИОМ (FIGO)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+                        pw.SizedBox(height: 8),
+                        pw.Text('• FIGO 0, 1, 2 (Субмукозные) — Розовые круги с ID'),
+                        pw.Text('• FIGO 3, 4 (Интрамуральные) — Синие круги с ID'),
+                        pw.Text('• FIGO 5, 6, 7 (Субсерозные) — Зеленые круги с ID'),
+                        pw.Text('• FIGO 8 (Другие) — Серые круги с ID'),
+                        pw.Text('• FIGO 2-5 (Гибрид) — Диагональные розово-зеленые полосы'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+
+    final pdfBytes = await pdf.save();
+
+    // 6. Сохраняем в PDF
+    String outputPath = '';
+    final displayName = '$filename.pdf';
+
+    if (Platform.isAndroid && directoryPath.startsWith('content://')) {
+      final tempDir = await getTemporaryDirectory();
+      outputPath = '${tempDir.path}/$displayName';
+      final tempFile = File(outputPath);
+      tempFile.writeAsBytesSync(pdfBytes);
+
+      final docUri = Uri.parse(directoryPath);
+      await saf.createFile(
+        docUri,
+        mimeType: 'application/pdf',
+        displayName: displayName,
+        bytes: pdfBytes,
+      );
+
+      try {
+        tempFile.deleteSync();
+      } catch (_) {}
+      
+      return 'рабочую папку';
+    } else {
+      outputPath = '$directoryPath/$displayName';
+      final file = File(outputPath);
+      file.writeAsBytesSync(pdfBytes);
+      return outputPath;
+    }
+  }
+
+  @override
   Future<void> saveDirectoryPath(String path) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_directory_path', path);
@@ -275,3 +458,4 @@ class ProjectRepositoryImpl implements ProjectRepository {
     return prefs.getString('selected_directory_path');
   }
 }
+

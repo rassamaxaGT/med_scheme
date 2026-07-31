@@ -9,6 +9,7 @@ class CanvasPainter extends CustomPainter {
   final ui.Image? backgroundImage;
   final Map<String, ui.Image> stampImages; // кешированные пользовательские PNG штампы
   final String? selectedActionId;
+  final String? patientId;
 
   CanvasPainter({
     required this.history,
@@ -16,7 +17,9 @@ class CanvasPainter extends CustomPainter {
     this.backgroundImage,
     this.stampImages = const {},
     this.selectedActionId,
+    this.patientId,
   });
+
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -67,7 +70,25 @@ class CanvasPainter extends CustomPainter {
     }
 
     canvas.restore();
+
+    if (patientId != null && patientId!.isNotEmpty) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: 'Пациент: $patientId',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 16.0,
+            fontWeight: FontWeight.bold,
+            backgroundColor: Colors.white.withValues(alpha: 0.7),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, const Offset(16.0, 16.0));
+    }
   }
+
 
   static Rect getOriginalActionBounds(DrawAction action) {
     if (action is StrokeAction) {
@@ -183,24 +204,45 @@ class CanvasPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    // Линия стрелки
-    canvas.drawLine(screenStart, screenEnd, paint);
+    if (action.isDashed) {
+      // Рисуем пунктирную линию расстояния
+      final double dashWidth = 6.0;
+      final double dashSpace = 4.0;
+      double distance = 0.0;
+      final double totalLength = (screenEnd - screenStart).distance;
+      final double angle = math.atan2(screenEnd.dy - screenStart.dy, screenEnd.dx - screenStart.dx);
+      
+      while (distance < totalLength) {
+        final start = screenStart + Offset(math.cos(angle) * distance, math.sin(angle) * distance);
+        distance += dashWidth;
+        final end = screenStart + Offset(
+          math.cos(angle) * (distance < totalLength ? distance : totalLength),
+          math.sin(angle) * (distance < totalLength ? distance : totalLength),
+        );
+        canvas.drawLine(start, end, paint);
+        distance += dashSpace;
+      }
+    } else {
+      // Линия стрелки
+      canvas.drawLine(screenStart, screenEnd, paint);
 
-    // Наконечник стрелки (в экранных координатах)
-    const double arrowSize = 12.0;
-    final double angle = math.atan2(screenEnd.dy - screenStart.dy, screenEnd.dx - screenStart.dx);
-    canvas.drawLine(
-      screenEnd,
-      Offset(screenEnd.dx - arrowSize * math.cos(angle - math.pi / 6),
-             screenEnd.dy - arrowSize * math.sin(angle - math.pi / 6)),
-      paint,
-    );
-    canvas.drawLine(
-      screenEnd,
-      Offset(screenEnd.dx - arrowSize * math.cos(angle + math.pi / 6),
-             screenEnd.dy - arrowSize * math.sin(angle + math.pi / 6)),
-      paint,
-    );
+      // Наконечник стрелки (в экранных координатах)
+      const double arrowSize = 12.0;
+      final double angle = math.atan2(screenEnd.dy - screenStart.dy, screenEnd.dx - screenStart.dx);
+      canvas.drawLine(
+        screenEnd,
+        Offset(screenEnd.dx - arrowSize * math.cos(angle - math.pi / 6),
+               screenEnd.dy - arrowSize * math.sin(angle - math.pi / 6)),
+        paint,
+      );
+      canvas.drawLine(
+        screenEnd,
+        Offset(screenEnd.dx - arrowSize * math.cos(angle + math.pi / 6),
+               screenEnd.dy - arrowSize * math.sin(angle + math.pi / 6)),
+        paint,
+      );
+    }
+
 
     // Текст — тоже в экранных координатах, фиксированный размер
     if (action.text.isNotEmpty) {
@@ -291,11 +333,43 @@ class CanvasPainter extends CustomPainter {
           }
         }
       }
+    } else if (stroke.brushType == 'fibrosis' && !stroke.isEraser) {
+      // Рисуем фиброз (сплошная линия со штриховкой)
+      canvas.drawPath(path, paint);
+
+      final double hatchSpacing = 15.0;
+      final double hatchLength = 6.0;
+      final hatchPaint = Paint()
+        ..color = stroke.color
+        ..strokeWidth = stroke.strokeWidth * 0.7
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+
+      for (final ui.PathMetric metric in path.computeMetrics()) {
+        double distance = 0.0;
+        while (distance < metric.length) {
+          final tangent = metric.getTangentForOffset(distance);
+          if (tangent != null) {
+            final pos = tangent.position;
+            final vec = tangent.vector;
+            final normal = Offset(-vec.dy, vec.dx); // перпендикуляр
+
+            // Рисуем штрих перпендикулярно пути
+            canvas.drawLine(
+              pos - normal * hatchLength,
+              pos + normal * hatchLength,
+              hatchPaint,
+            );
+          }
+          distance += hatchSpacing;
+        }
+      }
     } else {
       // Обычная кисть (карандаш) или ластик
       canvas.drawPath(path, paint);
     }
   }
+
 
   void _drawShape(Canvas canvas, ShapeAction shape) {
     final paint = Paint()
@@ -316,19 +390,133 @@ class CanvasPainter extends CustomPainter {
       paint.strokeWidth = 3.0;
       canvas.drawOval(rect, paint);
     } else if (shape.shapeType == 'myoma') {
-      // Бледно-розовая миома
+      final figo = shape.figoType ?? '0';
+      
+      Color getFigoColor(String type) {
+        if (type == '0' || type == '1' || type == '2') return const Color(0xFFE91E63);
+        if (type == '3' || type == '4') return const Color(0xFF1976D2);
+        if (type == '5' || type == '6' || type == '7') return const Color(0xFF388E3C);
+        return const Color(0xFF757575); // FIGO 8
+      }
+
+      final color = getFigoColor(figo);
+
+      if (figo == '2-5') {
+        // Гибрид: закраска в диагональную полоску (розовый + зеленый)
+        canvas.save();
+        canvas.clipPath(Path()..addOval(rect));
+        
+        // Розовый фон
+        final pinkPaint = Paint()
+          ..color = const Color(0xFFE91E63)
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(rect, pinkPaint);
+
+        // Зеленые диагональные полосы
+        final stripePaint = Paint()
+          ..color = const Color(0xFF388E3C)
+          ..strokeWidth = 6.0
+          ..style = PaintingStyle.stroke;
+        
+        for (double i = -rect.height; i < rect.width + rect.height; i += 16) {
+          canvas.drawLine(
+            Offset(rect.left + i, rect.top),
+            Offset(rect.left + i + rect.height, rect.bottom),
+            stripePaint,
+          );
+        }
+        canvas.restore();
+        
+        paint.color = const Color(0xFF9C27B0);
+        paint.strokeWidth = 3.0;
+        canvas.drawOval(rect, paint);
+      } else {
+        // Обычная миома
+        final fillPaint = Paint()
+          ..color = color.withValues(alpha: 0.3)
+          ..style = PaintingStyle.fill;
+        canvas.drawOval(rect, fillPaint);
+
+        paint.color = color;
+        paint.strokeWidth = 3.0;
+        canvas.drawOval(rect, paint);
+      }
+
+      // Отрисовка номера FIGO по центру круга
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: figo,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12.0,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(
+                color: Colors.black,
+                offset: Offset(1, 1),
+                blurRadius: 2,
+              )
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        rect.center - Offset(textPainter.width / 2, textPainter.height / 2),
+      );
+    } else if (shape.shapeType == 'infiltrate') {
+      // Инфильтрат: коричневая заливка + фестончатый контур
       final fillPaint = Paint()
-        ..color = const Color(0x66FFC0CB) // Розовая заливка
+        ..color = const Color(0x665C4033) // Коричневая заливка
         ..style = PaintingStyle.fill;
       canvas.drawOval(rect, fillPaint);
 
-      paint.color = const Color(0xFFFF69B4); // Насыщенная розовая граница
-      canvas.drawOval(rect, paint);
+      // Рисуем фестончатую границу
+      final baseOvalPath = Path()..addOval(rect);
+      final scallopedPath = Path();
+      bool first = true;
+
+      for (final ui.PathMetric metric in baseOvalPath.computeMetrics()) {
+        double distance = 0.0;
+        final double step = 6.0;
+        final double frequency = 0.2;
+        final double amplitude = 3.5;
+
+        while (distance < metric.length) {
+          final tangent = metric.getTangentForOffset(distance);
+          if (tangent != null) {
+            final pos = tangent.position;
+            final vec = tangent.vector;
+            final normal = Offset(-vec.dy, vec.dx);
+            
+            final wave = math.sin(distance * frequency) * amplitude;
+            final point = pos + normal * wave;
+
+            if (first) {
+              scallopedPath.moveTo(point.dx, point.dy);
+              first = false;
+            } else {
+              scallopedPath.lineTo(point.dx, point.dy);
+            }
+          }
+          distance += step;
+        }
+      }
+      scallopedPath.close();
+
+      final borderPaint = Paint()
+        ..color = Colors.black
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke;
+      canvas.drawPath(scallopedPath, borderPaint);
     } else {
       // Дефолтный овал
       canvas.drawOval(rect, paint);
     }
   }
+
 
   void _drawStamp(Canvas canvas, StampAction stamp) {
     if (stamp.stampType == 'iud') {

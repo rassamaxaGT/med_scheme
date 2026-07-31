@@ -3,10 +3,11 @@ import 'dart:ui';
 enum ToolType {
   pencil,
   eraser,
-  infiltrate,   // колючая проволока (инфильтрат)
+  infiltrate,   // эллипс с фестончатым контуром (инфильтрат)
   adhesions,    // паутина (спайки)
+  fibrosis,     // кисть фиброза
   endometrioma, // овал (шоколадный)
-  myoma,        // овал (бледно-розовый)
+  myoma,        // круг с FIGO-классификацией
   iud,          // штамп-спираль (ВМС)
   foci,         // штамп-пятно (очаги)
   arrow,        // стрелка с текстом
@@ -37,7 +38,7 @@ abstract class DrawAction {
 class StrokeAction extends DrawAction {
   final List<Offset> points;
   final bool isEraser;
-  final String brushType; // 'pencil', 'infiltrate', 'adhesions'
+  final String brushType; // 'pencil', 'adhesions', 'fibrosis'
 
   StrokeAction({
     required super.id,
@@ -56,7 +57,8 @@ class StrokeAction extends DrawAction {
 class ShapeAction extends DrawAction {
   final Offset startPoint;
   final Offset endPoint;
-  final String shapeType; // 'endometrioma', 'myoma'
+  final String shapeType; // 'endometrioma', 'myoma', 'infiltrate'
+  final String? figoType; // для миом: '0','1','2','3','4','5','6','7','8','2-5'
 
   ShapeAction({
     required super.id,
@@ -65,6 +67,7 @@ class ShapeAction extends DrawAction {
     required this.startPoint,
     required this.endPoint,
     required this.shapeType,
+    this.figoType,
     super.scaleX,
     super.scaleY,
     super.offsetX,
@@ -93,8 +96,9 @@ class StampAction extends DrawAction {
 
 class TextAction extends DrawAction {
   final Offset startPoint;
-  final Offset endPoint; // направление стрелки
+  final Offset endPoint; // направление стрелки / конец линии расстояния
   final String text;
+  final bool isDashed; // пунктирная линия расстояния
 
   TextAction({
     required super.id,
@@ -103,6 +107,7 @@ class TextAction extends DrawAction {
     required this.startPoint,
     required this.endPoint,
     required this.text,
+    this.isDashed = false,
     super.scaleX,
     super.scaleY,
     super.offsetX,

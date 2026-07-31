@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:file_picker/file_picker.dart';
 import 'core/di/injection.dart';
@@ -89,11 +90,17 @@ class EditorScreen extends StatefulWidget {
 }
 
 class _EditorScreenState extends State<EditorScreen> {
+  final _patientIdController = TextEditingController();
   Offset? _toolboxOffset;
   Offset? _dragPosition;
   int _lastSavedActionsCount = 0;
   String? _lastSavedBackgroundPath;
   ToolboxOrientation _toolboxOrientation = ToolboxOrientation.horizontal;
+
+  // PC-интерфейс: нотификаторы масштаба, выделения и сброса зума
+  final _scaleNotifier = ValueNotifier<double>(1.0);
+  final _selectedActionIdNotifier = ValueNotifier<String?>(null);
+  final _resetZoomNotifier = ValueNotifier<int>(0);
 
   double _safeClamp(double value, double min, double max) {
     if (min > max) return min;
@@ -101,15 +108,73 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    _patientIdController.dispose();
+    _scaleNotifier.dispose();
+    _selectedActionIdNotifier.dispose();
+    _resetZoomNotifier.dispose();
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    super.dispose();
+  }
+
+
+  bool _hasUnsavedChanges() {
+    final drawState = context.read<DrawBloc>().state;
+    return drawState.history.length != _lastSavedActionsCount ||
+        drawState.backgroundPath != _lastSavedBackgroundPath;
+  }
+
+  Future<bool?> _showExitWarningDialog(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Несохраненные изменения'),
+          content: const Text('У вас есть несохраненные изменения. Вы уверены, что хотите выйти? Все несохраненные изменения будут утеряны.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Остаться'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD32F2F),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Выйти без сохранения'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        leading: const Icon(
-          Icons.healing,
-          color: Color(0xFF0F4C81),
-          size: 24,
-        ),
+    return PopScope(
+      canPop: !_hasUnsavedChanges(),
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final bool? shouldPop = await _showExitWarningDialog(context);
+        if (shouldPop == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          leading: const Icon(
+            Icons.healing,
+            color: Color(0xFF0F4C81),
+            size: 24,
+          ),
         title: BlocBuilder<ProjectBloc, ProjectState>(
           builder: (context, projectState) {
             final projectBloc = context.read<ProjectBloc>();
@@ -123,14 +188,43 @@ class _EditorScreenState extends State<EditorScreen> {
                 final isModified = drawState.history.length != _lastSavedActionsCount ||
                     drawState.backgroundPath != _lastSavedBackgroundPath;
                 
-                return Text(
-                  isModified ? '$projectName • Изменен' : '$projectName • Сохранено',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isModified ? '$projectName • Изменен' : '$projectName • Сохранено',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 24),
+                    SizedBox(
+                      width: 180,
+                      height: 36,
+                      child: TextField(
+                        controller: _patientIdController,
+                        onChanged: (val) {
+                          context.read<DrawBloc>().add(SetPatientIdEvent(val));
+                        },
+                        style: const TextStyle(fontSize: 13, color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'ID / Фамилия пациента',
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                          filled: true,
+                          fillColor: Colors.white.withValues(alpha: 0.08),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 );
               },
             );
           },
         ),
+
         centerTitle: true,
         backgroundColor: const Color(0x99181818),
         elevation: 0,
@@ -182,6 +276,67 @@ class _EditorScreenState extends State<EditorScreen> {
               );
             },
           ),
+
+          // Индикатор масштаба + кнопка сброса
+          ValueListenableBuilder<double>(
+            valueListenable: _scaleNotifier,
+            builder: (context, scale, _) {
+              return Container(
+                margin: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${(scale * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: 'Сбросить масштаб (Ctrl+0)',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _resetZoomNotifier.value++,
+                        child: const Icon(
+                          Icons.zoom_out_map,
+                          size: 14,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
+          // Кнопки условных обозначений (легенд)
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Легенда эндометриоза',
+            onPressed: () => _showLegendDialog(
+              context,
+              'Легенда карты эндометриоза',
+              'assets/images/endo_legend.png',
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.legend_toggle_outlined),
+            tooltip: 'Легенда миом (FIGO)',
+            onPressed: () => _showLegendDialog(
+              context,
+              'Легенда классификации миом (FIGO)',
+              'assets/images/myoma_legend.png',
+            ),
+          ),
           
           // Быстрая кнопка сохранения
           IconButton(
@@ -189,6 +344,7 @@ class _EditorScreenState extends State<EditorScreen> {
             tooltip: 'Сохранить проект',
             onPressed: () => _showSaveDialog(context),
           ),
+
           
           // Кнопка экспорта
           Padding(
@@ -233,6 +389,11 @@ class _EditorScreenState extends State<EditorScreen> {
             }
             // Загружаем фоновое изображение
             context.read<DrawBloc>().add(SetBackgroundEvent(state.backgroundPath));
+            // Загружаем ID пациента
+            final pId = state.patientId ?? '';
+            _patientIdController.text = pId;
+            context.read<DrawBloc>().add(SetPatientIdEvent(pId));
+            
             setState(() {
               _lastSavedActionsCount = state.actions.length;
               _lastSavedBackgroundPath = state.backgroundPath;
@@ -240,6 +401,7 @@ class _EditorScreenState extends State<EditorScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Проект успешно загружен!')),
             );
+
           } else if (state is ProjectError) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(state.message), backgroundColor: Colors.redAccent),
@@ -249,8 +411,12 @@ class _EditorScreenState extends State<EditorScreen> {
         child: Stack(
           children: [
             // Задний слой: холст на весь экран
-            const Positioned.fill(
-              child: CanvasWidget(),
+            Positioned.fill(
+              child: CanvasWidget(
+                scaleNotifier: _scaleNotifier,
+                selectedActionIdNotifier: _selectedActionIdNotifier,
+                resetZoomNotifier: _resetZoomNotifier,
+              ),
             ),
             // Плавающий перемещаемый тулбар
             // Панель настроек (Settings Bubble) - рендерится отдельно, чтобы избежать блокировки касаний
@@ -264,21 +430,22 @@ class _EditorScreenState extends State<EditorScreen> {
                 if (tool == ToolType.move) return const Positioned(left: 0, top: 0, child: SizedBox.shrink());
 
                 final bool showColor = tool == ToolType.pencil ||
-                    tool == ToolType.infiltrate ||
                     tool == ToolType.adhesions ||
+                    tool == ToolType.fibrosis ||
                     tool == ToolType.arrow ||
+                    tool == ToolType.iud ||
                     tool == ToolType.foci;
 
                 final bool showThickness = tool == ToolType.pencil ||
-                    tool == ToolType.infiltrate ||
                     tool == ToolType.adhesions ||
+                    tool == ToolType.fibrosis ||
                     tool == ToolType.arrow ||
-                    tool == ToolType.eraser ||
-                    tool == ToolType.endometrioma ||
-                    tool == ToolType.myoma ||
-                    tool == ToolType.iud;
+                    tool == ToolType.eraser;
 
-                if (!showColor && !showThickness) return const Positioned(left: 0, top: 0, child: SizedBox.shrink());
+                final bool showCustomStamps = tool == ToolType.customStamp;
+                final bool showFigo = tool == ToolType.myoma;
+
+                if (!showColor && !showThickness && !showCustomStamps && !showFigo) return const Positioned(left: 0, top: 0, child: SizedBox.shrink());
 
                 // Размеры панели
                 final double statusBarHeight = MediaQuery.paddingOf(context).top;
@@ -329,6 +496,14 @@ class _EditorScreenState extends State<EditorScreen> {
                           context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
                         },
                         orientation: _toolboxOrientation,
+                        currentFigoType: drawState.currentFigoType,
+                        onFigoTypeChanged: (type) {
+                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
+                        },
+                        currentLineDashed: drawState.currentLineDashed,
+                        onLineDashedChanged: (dashed) {
+                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
+                        },
                       ),
                     ),
                   );
@@ -350,6 +525,14 @@ class _EditorScreenState extends State<EditorScreen> {
                           context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
                         },
                         orientation: _toolboxOrientation,
+                        currentFigoType: drawState.currentFigoType,
+                        onFigoTypeChanged: (type) {
+                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
+                        },
+                        currentLineDashed: drawState.currentLineDashed,
+                        onLineDashedChanged: (dashed) {
+                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
+                        },
                       ),
                     ),
                   );
@@ -371,6 +554,14 @@ class _EditorScreenState extends State<EditorScreen> {
                           context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
                         },
                         orientation: _toolboxOrientation,
+                        currentFigoType: drawState.currentFigoType,
+                        onFigoTypeChanged: (type) {
+                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
+                        },
+                        currentLineDashed: drawState.currentLineDashed,
+                        onLineDashedChanged: (dashed) {
+                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
+                        },
                       ),
                     ),
                   );
@@ -469,8 +660,20 @@ class _EditorScreenState extends State<EditorScreen> {
                       child: FloatingToolbox(
                         orientation: ToolboxOrientation.horizontal,
                         currentTool: drawState.currentTool,
-                        onToolSelected: (tool) {
-                          context.read<DrawBloc>().add(SelectToolEvent(tool));
+                        onToolSelected: (tool) async {
+                          if (tool == ToolType.customStamp && drawState.customStamps.isEmpty) {
+                            final result = await FilePicker.platform.pickFiles(
+                              type: FileType.custom,
+                              allowedExtensions: ['png'],
+                            );
+                            if (result != null && result.files.single.path != null) {
+                              context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
+                            } else {
+                              context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                            }
+                          } else {
+                            context.read<DrawBloc>().add(SelectToolEvent(tool));
+                          }
                         },
                         onDragStart: handleDragStart,
                         onDragUpdate: handleDragUpdate,
@@ -493,8 +696,20 @@ class _EditorScreenState extends State<EditorScreen> {
                     child: FloatingToolbox(
                       orientation: _toolboxOrientation,
                       currentTool: drawState.currentTool,
-                      onToolSelected: (tool) {
-                        context.read<DrawBloc>().add(SelectToolEvent(tool));
+                      onToolSelected: (tool) async {
+                        if (tool == ToolType.customStamp && drawState.customStamps.isEmpty) {
+                          final result = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['png'],
+                          );
+                          if (result != null && result.files.single.path != null) {
+                            context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
+                          } else {
+                            context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                          }
+                        } else {
+                          context.read<DrawBloc>().add(SelectToolEvent(tool));
+                        }
                       },
                       onDragStart: handleDragStart,
                       onDragUpdate: handleDragUpdate,
@@ -516,8 +731,9 @@ class _EditorScreenState extends State<EditorScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _exportCanvas(BuildContext context) {
     final drawState = context.read<DrawBloc>().state;
@@ -528,7 +744,12 @@ class _EditorScreenState extends State<EditorScreen> {
       return;
     }
 
-    final nameController = TextEditingController(text: 'экспорт_узи_${DateTime.now().millisecondsSinceEpoch}');
+    final patientId = drawState.patientId;
+    final defaultFilename = patientId.isNotEmpty 
+        ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}' 
+        : 'экспорт_узи_${DateTime.now().millisecondsSinceEpoch}';
+    final nameController = TextEditingController(text: defaultFilename);
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -536,7 +757,7 @@ class _EditorScreenState extends State<EditorScreen> {
           title: const Text('Экспортировать схему с разметкой'),
           content: TextField(
             controller: nameController,
-            decoration: const InputDecoration(labelText: 'Имя файла изображения'),
+            decoration: const InputDecoration(labelText: 'Имя файла'),
           ),
           actions: [
             TextButton(
@@ -551,16 +772,36 @@ class _EditorScreenState extends State<EditorScreen> {
                         projectName: nameController.text,
                         actions: drawState.history,
                         backgroundPath: drawState.backgroundPath,
+                        patientId: patientId,
                       ),
                     );
               },
-              child: const Text('Экспорт'),
+              child: const Text('Экспорт в PNG'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F4C81),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                context.read<ProjectBloc>().add(
+                      ExportPdfEvent(
+                        projectName: nameController.text,
+                        actions: drawState.history,
+                        backgroundPath: drawState.backgroundPath,
+                        patientId: patientId,
+                      ),
+                    );
+              },
+              child: const Text('Экспорт в PDF'),
             ),
           ],
         );
       },
     );
   }
+
 
   void _pickBackgroundImage(BuildContext context) async {
     try {
@@ -614,13 +855,16 @@ class _EditorScreenState extends State<EditorScreen> {
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(dialogContext);
-                  final actions = context.read<DrawBloc>().state.history;
-                  final backgroundPath = context.read<DrawBloc>().state.backgroundPath;
+                  final drawState = context.read<DrawBloc>().state;
+                  final actions = drawState.history;
+                  final backgroundPath = drawState.backgroundPath;
+                  final patientId = drawState.patientId;
                   projectBloc.add(
                     SaveProjectEvent(
                       projectName: projectName,
                       actions: actions,
                       backgroundPath: backgroundPath,
+                      patientId: patientId,
                     ),
                   );
                 },
@@ -643,7 +887,13 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _showSaveAsDialog(BuildContext context) {
-    final nameController = TextEditingController(text: 'проект_узи_${DateTime.now().millisecondsSinceEpoch}');
+    final drawState = context.read<DrawBloc>().state;
+    final patientId = drawState.patientId;
+    final String initialName = patientId.isNotEmpty
+        ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}'
+        : 'проект_узи_${DateTime.now().millisecondsSinceEpoch}';
+    final nameController = TextEditingController(text: initialName);
+    
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -660,13 +910,14 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                final actions = context.read<DrawBloc>().state.history;
-                final backgroundPath = context.read<DrawBloc>().state.backgroundPath;
+                final actions = drawState.history;
+                final backgroundPath = drawState.backgroundPath;
                 context.read<ProjectBloc>().add(
                       SaveProjectEvent(
                         projectName: nameController.text,
                         actions: actions,
                         backgroundPath: backgroundPath,
+                        patientId: patientId,
                       ),
                     );
                 Navigator.pop(dialogContext);
@@ -679,8 +930,30 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+
   void _openProject(BuildContext context) async {
     try {
+      if (_hasUnsavedChanges()) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Открыть проект'),
+            content: const Text('Все несохраненные изменения текущего проекта будут потеряны. Продолжить?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Отмена'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Продолжить'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+      }
+
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
         withData: kIsWeb,
@@ -714,4 +987,129 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  void _showLegendDialog(BuildContext context, String title, String assetPath) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 500),
+            child: InteractiveViewer(
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Закрыть'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Горячие клавиши (зарегистрированы глобально через HardwareKeyboard)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (!mounted) return false;
+    // Обрабатываем только нажатия и повторы (не отпускания)
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+
+    // Не перехватываем события при фокусе на текстовом поле
+    final primaryFocus = FocusManager.instance.primaryFocus;
+    if (primaryFocus?.context?.widget is EditableText) return false;
+
+    final isCtrl = HardwareKeyboard.instance.isControlPressed;
+    final isShift = HardwareKeyboard.instance.isShiftPressed;
+
+    final drawBloc = context.read<DrawBloc>();
+
+    // Ctrl+Z: Отмена
+    if (isCtrl && !isShift && event.logicalKey == LogicalKeyboardKey.keyZ) {
+      drawBloc.add(UndoEvent());
+      return true;
+    }
+
+    // Ctrl+Y / Ctrl+Shift+Z: Повтор
+    if (isCtrl && event.logicalKey == LogicalKeyboardKey.keyY) {
+      drawBloc.add(RedoEvent());
+      return true;
+    }
+    if (isCtrl && isShift && event.logicalKey == LogicalKeyboardKey.keyZ) {
+      drawBloc.add(RedoEvent());
+      return true;
+    }
+
+    // Ctrl+S: Сохранить
+    if (isCtrl && !isShift && event.logicalKey == LogicalKeyboardKey.keyS) {
+      _showSaveDialog(context);
+      return true;
+    }
+
+    // Ctrl+0: Сбросить масштаб
+    if (isCtrl && event.logicalKey == LogicalKeyboardKey.digit0) {
+      _resetZoomNotifier.value++;
+      return true;
+    }
+
+    // Delete: Удалить выделенный объект
+    if (event.logicalKey == LogicalKeyboardKey.delete) {
+      final selectedId = _selectedActionIdNotifier.value;
+      if (selectedId != null) {
+        drawBloc.add(DeleteActionEvent(selectedId));
+        _selectedActionIdNotifier.value = null;
+        return true;
+      }
+      return false;
+    }
+
+    // Без модификаторов — переключение инструментов
+    if (!isCtrl && !isShift) {
+      // Цифровые клавиши 1–9 и 0
+      final toolByNumber = <LogicalKeyboardKey, ToolType>{
+        LogicalKeyboardKey.digit1: ToolType.pencil,
+        LogicalKeyboardKey.digit2: ToolType.eraser,
+        LogicalKeyboardKey.digit3: ToolType.move,
+        LogicalKeyboardKey.digit4: ToolType.infiltrate,
+        LogicalKeyboardKey.digit5: ToolType.adhesions,
+        LogicalKeyboardKey.digit6: ToolType.fibrosis,
+        LogicalKeyboardKey.digit7: ToolType.endometrioma,
+        LogicalKeyboardKey.digit8: ToolType.myoma,
+        LogicalKeyboardKey.digit9: ToolType.iud,
+        LogicalKeyboardKey.digit0: ToolType.foci,
+      };
+
+      final tool = toolByNumber[event.logicalKey];
+      if (tool != null) {
+        drawBloc.add(SelectToolEvent(tool));
+        return true;
+      }
+
+      // Буквенные шорткаты
+      if (event.logicalKey == LogicalKeyboardKey.keyE) {
+        drawBloc.add(SelectToolEvent(ToolType.eraser));
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.keyM ||
+          event.logicalKey == LogicalKeyboardKey.keyV) {
+        drawBloc.add(SelectToolEvent(ToolType.move));
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.keyP ||
+          event.logicalKey == LogicalKeyboardKey.keyB) {
+        drawBloc.add(SelectToolEvent(ToolType.pencil));
+        return true;
+      }
+    }
+
+    return false;
+  }
 }
+

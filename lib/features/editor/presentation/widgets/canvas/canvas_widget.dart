@@ -1,6 +1,8 @@
 import '../../../../../core/utils/image_loader.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/entities/draw_action.dart';
 import '../../bloc/draw_bloc.dart';
@@ -10,10 +12,16 @@ import 'canvas_painter.dart';
 
 class CanvasWidget extends StatefulWidget {
   final ui.Image? backgroundImage;
+  final ValueNotifier<double>? scaleNotifier;
+  final ValueNotifier<String?>? selectedActionIdNotifier;
+  final ValueNotifier<int>? resetZoomNotifier;
 
   const CanvasWidget({
     super.key,
     this.backgroundImage,
+    this.scaleNotifier,
+    this.selectedActionIdNotifier,
+    this.resetZoomNotifier,
   });
 
   @override
@@ -39,14 +47,23 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   ui.Image? _loadedBackgroundImage;
   String? _loadedBackgroundPath;
 
+  // Кэш пользовательских PNG-штампов
+  final Map<String, ui.Image?> _stampImages = {};
+
   // Переменные для зума и панорамирования (Zoom & Pan)
   double _scale = 1.0;
   double _previousScale = 1.0;
   Offset _offset = Offset.zero;
   Offset _normalizedFocalPoint = Offset.zero;
 
+  // Курсор ластика в экранных координатах
+  Offset? _eraserCursorPosition;
+  List<DrawAction> _initialHistoryBeforeErase = [];
+  bool _hasErasedAnything = false;
+
   // Флаги управления режимами ввода
   bool _isStylusActive = false;
+  DateTime? _lastStylusTime;
   bool _isZooming = false;
 
   // Активные указатели для отслеживания мультитача
@@ -57,9 +74,32 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   String _generateId() => DateTime.now().millisecondsSinceEpoch.toString();
 
   @override
+  void initState() {
+    super.initState();
+    widget.resetZoomNotifier?.addListener(_onResetZoom);
+  }
+
+  @override
+  void dispose() {
+    widget.resetZoomNotifier?.removeListener(_onResetZoom);
+    super.dispose();
+  }
+
+  void _onResetZoom() {
+    setState(() {
+      _scale = 1.0;
+      _offset = Offset.zero;
+      widget.scaleNotifier?.value = 1.0;
+    });
+  }
+
+  @override
   void didUpdateWidget(covariant CanvasWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    debugPrint('[CanvasLifecycle] didUpdateWidget called. Clearing pointers. Current scale=$_scale, offset=$_offset');
+    if (oldWidget.resetZoomNotifier != widget.resetZoomNotifier) {
+      oldWidget.resetZoomNotifier?.removeListener(_onResetZoom);
+      widget.resetZoomNotifier?.addListener(_onResetZoom);
+    }
     _activePointers.clear();
     _isZooming = false;
   }
@@ -69,7 +109,6 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     return BlocBuilder<DrawBloc, DrawState>(
       builder: (context, state) {
         if (state.currentTool != _lastTool) {
-          debugPrint('[CanvasLifecycle] tool changed from $_lastTool to ${state.currentTool}. Clearing pointers. Current scale=$_scale, offset=$_offset');
           _lastTool = state.currentTool;
           _activePointers.clear();
           _isZooming = false;
@@ -96,9 +135,26 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           Future.microtask(() => _loadBackground(state.backgroundPath));
         }
 
+        // Автоматическая подгрузка изображений для пользовательских штампов из истории
+        for (final action in state.history) {
+          if (action is StampAction && action.stampType == 'custom' && action.customStampPath != null) {
+            final path = action.customStampPath!;
+            if (!_stampImages.containsKey(path)) {
+              _stampImages[path] = null as dynamic; // Временная заглушка, чтобы не запускать загрузку повторно
+              Future.microtask(() => _loadCustomStampImage(path));
+            }
+          }
+        }
+
+        // Также грузим текущий выбранный кастомный штамп
+        if (state.customStampPath != null && !_stampImages.containsKey(state.customStampPath!)) {
+          _stampImages[state.customStampPath!] = null as dynamic;
+          Future.microtask(() => _loadCustomStampImage(state.customStampPath!));
+        }
+
         return ClipRect(
           child: Listener(
-            // Listener используется для низкоуровневой обработки касаний и стилуса (силы нажатия)
+            // Listener для низкоуровневой обработки касаний, стилуса и колеса мыши
             onPointerDown: (event) => _onPointerDown(event, state),
             onPointerMove: (event) => _onPointerMove(event, state),
             onPointerUp: (event) => _onPointerUp(event, state),
@@ -107,31 +163,61 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               if (_activePointers.length < 2) {
                 _isZooming = false;
               }
+              if (state.currentTool == ToolType.eraser) {
+                setState(() {
+                  _initialHistoryBeforeErase = [];
+                  _hasErasedAnything = false;
+                  _eraserCursorPosition = null;
+                  _currentPoints = [];
+                });
+              }
             },
-            child: GestureDetector(
-              // Scale gestures для масштабирования холста двумя пальцами
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              onScaleEnd: _onScaleEnd,
-              child: Stack(
-                children: [
-                  Transform(
-                    transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0.0)
-                      * Matrix4.diagonal3Values(_scale, _scale, 1.0),
-                    child: CustomPaint(
-                      size: Size.infinite,
-                      painter: CanvasPainter(
-                        history: state.history,
-                        activeAction: _activeAction,
-                        backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
-                        selectedActionId: _selectedActionId,
+            onPointerSignal: _onPointerSignal,
+            child: MouseRegion(
+              cursor: _getCursorForTool(state),
+              onHover: (event) {
+                if (state.currentTool == ToolType.eraser && mounted) {
+                  setState(() => _eraserCursorPosition = event.localPosition);
+                }
+              },
+              onExit: (_) {
+                if (mounted) setState(() => _eraserCursorPosition = null);
+              },
+              child: GestureDetector(
+                // Scale gestures для масштабирования холста двумя пальцами
+                onScaleStart: _onScaleStart,
+                onScaleUpdate: _onScaleUpdate,
+                onScaleEnd: _onScaleEnd,
+                child: Stack(
+                  children: [
+                    Transform(
+                      transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0.0)
+                        * Matrix4.diagonal3Values(_scale, _scale, 1.0),
+                      child: CustomPaint(
+                        size: Size.infinite,
+                        painter: CanvasPainter(
+                          history: state.history,
+                          // Не отображаем _activeAction для ластика — только курсор-круг
+                          activeAction: state.currentTool != ToolType.eraser ? _activeAction : null,
+                          backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
+                          stampImages: Map<String, ui.Image>.fromEntries(
+                            _stampImages.entries
+                                .where((e) => e.value != null)
+                                .map((e) => MapEntry(e.key, e.value!)),
+                          ),
+                          selectedActionId: _selectedActionId,
+                          patientId: state.patientId,
+                        ),
                       ),
                     ),
-                  ),
-                  // Кнопка удаления выделенного объекта
-                  if (state.currentTool == ToolType.move && _selectedActionId != null)
-                    _buildDeleteButton(context, state),
-                ],
+                    // Кнопка удаления выделенного объекта
+                    if (state.currentTool == ToolType.move && _selectedActionId != null)
+                      _buildDeleteButton(context, state),
+                    // Курсор ластика — оверлей
+                    if (state.currentTool == ToolType.eraser && _eraserCursorPosition != null)
+                      _buildEraserCursor(state),
+                  ],
+                ),
               ),
             ),
           ),
@@ -162,6 +248,25 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (mounted) {
         setState(() {
           _loadedBackgroundImage = null;
+        });
+      }
+    }
+  }
+
+  // Загрузка изображения пользовательского штампа
+  void _loadCustomStampImage(String path) async {
+    try {
+      final image = await loadUiImage(path);
+      if (mounted) {
+        setState(() {
+          _stampImages[path] = image;
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки пользовательского штампа $path: $e');
+      if (mounted) {
+        setState(() {
+          _stampImages.remove(path);
         });
       }
     }
@@ -207,6 +312,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               _originalActionForDrag = null;
               _draggedHandle = null;
             });
+            widget.selectedActionIdNotifier?.value = null;
             context.read<DrawBloc>().add(DeleteActionEvent(id));
           },
           child: Container(
@@ -272,10 +378,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         minDistance = distToCenter;
       }
       return minDistance;
-    } else if (action is StampAction) {
-      return (p - action.position).distance;
     } else if (action is TextAction) {
       return _getDistanceToSegment(p, action.startPoint, action.endPoint);
+    } else if (action is StampAction) {
+      return (p - action.position).distance;
     }
     return double.infinity;
   }
@@ -306,6 +412,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         startPoint: original.startPoint,
         endPoint: original.endPoint,
         shapeType: original.shapeType,
+        figoType: original.figoType,
         scaleX: original.scaleX,
         scaleY: original.scaleY,
         offsetX: newOffsetX,
@@ -332,6 +439,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         startPoint: original.startPoint,
         endPoint: original.endPoint,
         text: original.text,
+        isDashed: original.isDashed,
         scaleX: original.scaleX,
         scaleY: original.scaleY,
         offsetX: newOffsetX,
@@ -340,6 +448,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
     return original;
   }
+
 
   // Метод перевода точки из canvas-координат в локальную систему координат объекта.
   // Обратная операция к: rendered_p = p * scale + offset
@@ -386,6 +495,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         startPoint: original.startPoint,
         endPoint: original.endPoint,
         shapeType: original.shapeType,
+        figoType: original.figoType,
         scaleX: newScaleX,
         scaleY: newScaleY,
         offsetX: newOffsetX,
@@ -412,6 +522,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         startPoint: original.startPoint,
         endPoint: original.endPoint,
         text: original.text,
+        isDashed: original.isDashed,
         scaleX: newScaleX,
         scaleY: newScaleY,
         offsetX: newOffsetX,
@@ -426,15 +537,92 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     return (screenOffset - _offset) / _scale;
   }
 
+  void _eraseAtPoint(Offset canvasPoint, double eraserRadius, DrawState state) {
+    final List<DrawAction> updatedHistory = List<DrawAction>.from(state.history);
+    bool historyChanged = false;
+
+    for (int i = updatedHistory.length - 1; i >= 0; i--) {
+      final action = updatedHistory[i];
+      final localObjPos = _canvasToObjectSpace(canvasPoint, action);
+      
+      final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
+      final double effectiveRadius = eraserRadius / (avgScale <= 0 ? 1.0 : avgScale);
+
+      if (action is StrokeAction) {
+        // Проверяем, близко ли ластик к линии
+        final dist = _getDistanceToAction(localObjPos, action);
+        if (dist < effectiveRadius + (action.strokeWidth / 2)) {
+          // Разбиваем линию на непрерывные сегменты, исключая стёртые точки
+          final List<List<Offset>> segments = [];
+          List<Offset> currentSegment = [];
+
+          for (final pt in action.points) {
+            final double d = (pt - localObjPos).distance;
+            if (d < effectiveRadius) {
+              if (currentSegment.isNotEmpty) {
+                segments.add(currentSegment);
+                currentSegment = [];
+              }
+            } else {
+              currentSegment.add(pt);
+            }
+          }
+          if (currentSegment.isNotEmpty) {
+            segments.add(currentSegment);
+          }
+
+          // Удаляем старый штрих
+          updatedHistory.removeAt(i);
+          historyChanged = true;
+
+          // Добавляем новые сегменты на то же место
+          int insertIndex = i;
+          for (final segmentPoints in segments) {
+            if (segmentPoints.isNotEmpty) {
+              updatedHistory.insert(
+                insertIndex,
+                StrokeAction(
+                  id: '${action.id}_${segmentPoints.hashCode}',
+                  color: action.color,
+                  strokeWidth: action.strokeWidth,
+                  points: segmentPoints,
+                  isEraser: action.isEraser,
+                  brushType: action.brushType,
+                  scaleX: action.scaleX,
+                  scaleY: action.scaleY,
+                  offsetX: action.offsetX,
+                  offsetY: action.offsetY,
+                ),
+              );
+              insertIndex++;
+            }
+          }
+        }
+      } else {
+        // Для не-линий (фигур, штампов, стрелок) удаляем объект целиком при касании ластика
+        final dist = _getDistanceToAction(localObjPos, action);
+        if (dist < effectiveRadius) {
+          updatedHistory.removeAt(i);
+          historyChanged = true;
+        }
+      }
+    }
+
+    if (historyChanged) {
+      _hasErasedAnything = true;
+      context.read<DrawBloc>().add(UpdateHistoryWithoutUndoEvent(updatedHistory));
+    }
+  }
+
   void _onPointerDown(PointerDownEvent event, DrawState state) {
-    debugPrint('[CanvasPointer] _onPointerDown: id=${event.pointer}, position=${event.localPosition}, tool=${state.currentTool}');
     // Palm Rejection: Если рисуем стилусом, игнорируем любые касания пальцами (touch)
     if (event.kind == ui.PointerDeviceKind.stylus) {
       _isStylusActive = true;
-    } else if (event.kind == ui.PointerDeviceKind.touch && _isStylusActive) {
-      // Игнорируем касание ладонью
-      debugPrint('[CanvasPointer] _onPointerDown Palm Rejection active - ignoring finger');
-      return;
+      _lastStylusTime = DateTime.now();
+    } else if (event.kind == ui.PointerDeviceKind.touch) {
+      if (_isStylusActive || (_lastStylusTime != null && DateTime.now().difference(_lastStylusTime!).inMilliseconds < 300)) {
+        return;
+      }
     }
 
     _activePointers.add(event.pointer);
@@ -537,12 +725,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         _draggedHandle = null;
         if (hitAction != null) {
           _selectedActionId = hitAction.id;
+          widget.selectedActionIdNotifier?.value = hitAction.id;
           _dragStartPoint = localPosition;
           _originalActionForDrag = hitAction;
           _activeAction = hitAction;
         } else {
           // Кликнули в стороне! Снимаем выделение
           _selectedActionId = null;
+          widget.selectedActionIdNotifier?.value = null;
           _dragStartPoint = null;
           _originalActionForDrag = null;
           _activeAction = null;
@@ -555,25 +745,25 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       return;
     }
 
+    if (state.currentTool == ToolType.eraser) {
+      setState(() {
+        _initialHistoryBeforeErase = List<DrawAction>.from(state.history);
+        _hasErasedAnything = false;
+        _eraserCursorPosition = event.localPosition;
+        _currentPoints = [localPosition];
+      });
+      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2, state);
+      return;
+    }
+
     // Вычисляем толщину линии с учетом давления стилуса (если оно доступно)
     final double pressure = event.pressure; // Значение от 0.0 до 1.0
     final double strokeWidth = state.currentStrokeWidth * (pressure > 0.0 ? (0.5 + pressure) : 1.0);
 
     setState(() {
-      if (state.currentTool == ToolType.eraser) {
-        // Ластик: рисуем визуальный след
-        _currentPoints = [localPosition];
-        _activeAction = StrokeAction(
-          id: id,
-          color: Colors.red.withValues(alpha: 0.3),
-          strokeWidth: state.currentStrokeWidth,
-          points: _currentPoints,
-          isEraser: false,
-          brushType: 'pencil',
-        );
-      } else if (state.currentTool == ToolType.pencil ||
-          state.currentTool == ToolType.infiltrate ||
-          state.currentTool == ToolType.adhesions) {
+      if (state.currentTool == ToolType.pencil ||
+          state.currentTool == ToolType.adhesions ||
+          state.currentTool == ToolType.fibrosis) {
         // Инициализируем линию (штрих)
         _currentPoints = [localPosition];
         _activeAction = StrokeAction(
@@ -582,14 +772,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           strokeWidth: strokeWidth,
           points: _currentPoints,
           isEraser: false,
-          brushType: state.currentTool == ToolType.infiltrate
-              ? 'infiltrate'
-              : state.currentTool == ToolType.adhesions
-                  ? 'adhesions'
+          brushType: state.currentTool == ToolType.adhesions
+              ? 'adhesions'
+              : state.currentTool == ToolType.fibrosis
+                  ? 'fibrosis'
                   : 'pencil',
         );
       } else if (state.currentTool == ToolType.endometrioma ||
-          state.currentTool == ToolType.myoma) {
+          state.currentTool == ToolType.myoma ||
+          state.currentTool == ToolType.infiltrate) {
         // Овал (фигуры)
         _activeAction = ShapeAction(
           id: id,
@@ -597,27 +788,36 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           strokeWidth: state.currentStrokeWidth,
           startPoint: localPosition,
           endPoint: localPosition,
-          shapeType: state.currentTool == ToolType.endometrioma ? 'endometrioma' : 'myoma',
+          shapeType: state.currentTool == ToolType.endometrioma
+              ? 'endometrioma'
+              : state.currentTool == ToolType.myoma
+                  ? 'myoma'
+                  : 'infiltrate',
+          figoType: state.currentTool == ToolType.myoma ? state.currentFigoType : null,
         );
       } else if (state.currentTool == ToolType.iud ||
-          state.currentTool == ToolType.foci) {
+          state.currentTool == ToolType.foci ||
+          state.currentTool == ToolType.customStamp) {
         // Штампы срабатывают мгновенно при нажатии
+        if (state.currentTool == ToolType.customStamp && state.customStampPath == null) {
+          return;
+        }
         final stampAction = StampAction(
           id: id,
           color: state.currentColor,
           strokeWidth: state.currentStrokeWidth,
           position: localPosition,
-          stampType: state.currentTool == ToolType.iud ? 'iud' : 'foci',
+          stampType: state.currentTool == ToolType.customStamp
+              ? 'custom'
+              : (state.currentTool == ToolType.iud ? 'iud' : 'foci'),
+          customStampPath: state.currentTool == ToolType.customStamp ? state.customStampPath : null,
         );
         context.read<DrawBloc>().add(AddActionEvent(stampAction));
 
-        // Сразу выделяем и переключаемся в режим перемещения
+        // Просто завершаем рисование
         setState(() {
-          _selectedActionId = stampAction.id;
           _activeAction = null;
-          _isAutoSwitchedToMove = true;
         });
-        context.read<DrawBloc>().add(SelectToolEvent(ToolType.move));
       } else if (state.currentTool == ToolType.arrow) {
         // Инициализируем стрелку
         _activeAction = TextAction(
@@ -627,6 +827,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           startPoint: localPosition,
           endPoint: localPosition,
           text: '',
+          isDashed: state.currentLineDashed,
         );
       }
     });
@@ -636,9 +837,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (event.kind == ui.PointerDeviceKind.touch && _isStylusActive) {
       return; // Игнорируем касание ладонью при активном стилусе
     }
-    if (_isZooming || _activeAction == null) return;
+    if (_isZooming) return;
 
     final localPosition = _screenToCanvas(event.localPosition);
+
+    // Ластик: отслеживаем точки и позицию курсора
+    if (state.currentTool == ToolType.eraser) {
+      setState(() {
+        _eraserCursorPosition = event.localPosition;
+        _currentPoints.add(localPosition);
+      });
+      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2, state);
+      return;
+    }
+
+    if (_activeAction == null) return;
 
     if (state.currentTool == ToolType.move) {
       if (_selectedActionId != null && _originalActionForDrag != null && _dragStartPoint != null) {
@@ -683,25 +896,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
       if (_activeAction is StrokeAction) {
         _currentPoints.add(localPosition);
-        if (state.currentTool == ToolType.eraser) {
-          _activeAction = StrokeAction(
-            id: _activeAction!.id,
-            color: Colors.red.withValues(alpha: 0.3),
-            strokeWidth: state.currentStrokeWidth,
-            points: List<Offset>.from(_currentPoints),
-            isEraser: false,
-            brushType: 'pencil',
-          );
-        } else {
-          _activeAction = StrokeAction(
-            id: _activeAction!.id,
-            color: _activeAction!.color,
-            strokeWidth: strokeWidth,
-            points: List<Offset>.from(_currentPoints),
-            isEraser: false,
-            brushType: (_activeAction as StrokeAction).brushType,
-          );
-        }
+        _activeAction = StrokeAction(
+          id: _activeAction!.id,
+          color: _activeAction!.color,
+          strokeWidth: strokeWidth,
+          points: List<Offset>.from(_currentPoints),
+          isEraser: false,
+          brushType: (_activeAction as StrokeAction).brushType,
+        );
       } else if (_activeAction is ShapeAction) {
         final shape = _activeAction as ShapeAction;
         _activeAction = ShapeAction(
@@ -711,6 +913,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           startPoint: shape.startPoint,
           endPoint: localPosition,
           shapeType: shape.shapeType,
+          figoType: shape.figoType,
         );
       } else if (_activeAction is TextAction) {
         final text = _activeAction as TextAction;
@@ -721,28 +924,45 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           startPoint: text.startPoint,
           endPoint: localPosition,
           text: text.text,
+          isDashed: text.isDashed,
         );
       }
     });
   }
 
   void _onPointerUp(PointerUpEvent event, DrawState state) {
-    debugPrint('[CanvasPointer] _onPointerUp: id=${event.pointer}, position=${event.localPosition}, activePointersCount=${_activePointers.length}');
     _activePointers.remove(event.pointer);
     if (_activePointers.length < 2) {
       _isZooming = false;
     }
 
-    if (event.kind == ui.PointerDeviceKind.touch && _isStylusActive) {
-      return; // Игнорируем ладонь
+    if (event.kind == ui.PointerDeviceKind.touch) {
+      if (_isStylusActive || (_lastStylusTime != null && DateTime.now().difference(_lastStylusTime!).inMilliseconds < 300)) {
+        return; // Игнорируем ладонь
+      }
     }
     if (event.kind == ui.PointerDeviceKind.stylus) {
       _isStylusActive = false; // Отпустили стилус
+      _lastStylusTime = DateTime.now();
     }
-    if (_isZooming || _activeAction == null) {
-      debugPrint('[CanvasPointer] _onPointerUp early return: _isZooming=$_isZooming, _activeActionIsNull=${_activeAction == null}');
+
+    if (_isZooming) return;
+
+    // Ластик: обрабатываем отдельно
+    if (state.currentTool == ToolType.eraser) {
+      if (_hasErasedAnything) {
+        context.read<DrawBloc>().add(SaveUndoStateEvent(_initialHistoryBeforeErase));
+      }
+      setState(() {
+        _initialHistoryBeforeErase = [];
+        _hasErasedAnything = false;
+        _eraserCursorPosition = event.localPosition;
+        _currentPoints = [];
+      });
       return;
     }
+
+    if (_activeAction == null) return;
 
     if (state.currentTool == ToolType.move) {
       if (_selectedActionId != null && _activeAction != null) {
@@ -753,11 +973,6 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           _draggedHandle = null;
         });
       }
-      return;
-    }
-
-    if (state.currentTool == ToolType.eraser) {
-      _applyEraser(state);
       return;
     }
 
@@ -773,16 +988,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             startPoint: oldTextAction.startPoint,
             endPoint: oldTextAction.endPoint,
             text: text,
+            isDashed: oldTextAction.isDashed,
           );
           drawBloc.add(AddActionEvent(finalAction));
 
-          // Сразу выделяем и переключаемся в режим перемещения
           setState(() {
-            _selectedActionId = finalAction.id;
             _activeAction = null;
-            _isAutoSwitchedToMove = true;
           });
-          drawBloc.add(SelectToolEvent(ToolType.move));
         } else {
           setState(() {
             _activeAction = null;
@@ -793,14 +1005,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       final finalAction = _activeAction!;
       context.read<DrawBloc>().add(AddActionEvent(finalAction));
 
-      // Сразу выделяем и переключаемся в режим перемещения
       setState(() {
-        _selectedActionId = finalAction.id;
         _activeAction = null;
         _currentPoints = [];
-        _isAutoSwitchedToMove = true;
       });
-      context.read<DrawBloc>().add(SelectToolEvent(ToolType.move));
     }
   }
 
@@ -833,148 +1041,127 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     );
   }
 
-  void _applyEraser(DrawState state) {
-    if (_currentPoints.isEmpty) {
-      setState(() {
-        _activeAction = null;
-        _currentPoints = [];
-      });
-      return;
-    }
+  // ──────────────────────────────────────────────
+  // Масштабирование (пинч-жест, два пальца)
+  // ──────────────────────────────────────────────
 
-    final double eraserWidth = state.currentStrokeWidth;
-    final double eraserRadius = eraserWidth / 2;
-    final List<DrawAction> newHistory = [];
-    bool historyChanged = false;
-
-    for (final action in state.history) {
-      if (action is StrokeAction) {
-        // Проверяем, стерта ли какая-то точка штриха
-        final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
-        final double localR = eraserRadius / (avgScale == 0 ? 1.0 : avgScale);
-
-        final localEraserPoints = _currentPoints.map((p) => _canvasToObjectSpace(p, action)).toList();
-
-        List<List<Offset>> newSegments = [];
-        List<Offset> currentSegment = [];
-
-        for (final p in action.points) {
-          final isErased = _isPointErasedByPath(p, localEraserPoints, localR);
-          if (isErased) {
-            if (currentSegment.isNotEmpty) {
-              newSegments.add(currentSegment);
-              currentSegment = [];
-            }
-          } else {
-            currentSegment.add(p);
-          }
-        }
-
-        if (currentSegment.isNotEmpty) {
-          newSegments.add(currentSegment);
-        }
-
-        if (newSegments.length == 1 && newSegments.first.length == action.points.length) {
-          // Ничего не изменилось
-          newHistory.add(action);
-        } else {
-          historyChanged = true;
-          // Добавляем все нестертые сегменты как новые отдельные StrokeAction
-          int index = 0;
-          for (final segment in newSegments) {
-            if (segment.isNotEmpty) {
-              newHistory.add(StrokeAction(
-                id: '${action.id}_erased_${index++}_${DateTime.now().microsecondsSinceEpoch}',
-                color: action.color,
-                strokeWidth: action.strokeWidth,
-                points: segment,
-                isEraser: action.isEraser,
-                brushType: action.brushType,
-                scaleX: action.scaleX,
-                scaleY: action.scaleY,
-                offsetX: action.offsetX,
-                offsetY: action.offsetY,
-              ));
-            }
-          }
-        }
-      } else {
-        // Для ShapeAction, StampAction, TextAction проверяем пересечение с траекторией ластика
-        bool intersects = false;
-        for (final ep in _currentPoints) {
-          final localEp = _canvasToObjectSpace(ep, action);
-          final dist = _getDistanceToAction(localEp, action);
-          final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
-          final screenDist = dist * avgScale;
-          // Увеличим порог для удобства попадания ластиком по векторным фигурам
-          final threshold = eraserRadius + (action.strokeWidth / 2) + 5.0;
-          if (screenDist < threshold) {
-            intersects = true;
-            break;
-          }
-        }
-
-        if (intersects) {
-          historyChanged = true; // Стираем (удаляем) полностью
-        } else {
-          newHistory.add(action);
-        }
-      }
-    }
-
-    if (historyChanged) {
-      context.read<DrawBloc>().add(SetHistoryEvent(newHistory));
-    }
-
-    setState(() {
-      _activeAction = null;
-      _currentPoints = [];
-    });
-  }
-
-  bool _isPointErasedByPath(Offset p, List<Offset> eraserPoints, double localR) {
-    if (eraserPoints.isEmpty) return false;
-    if (eraserPoints.length == 1) {
-      return (p - eraserPoints.first).distance <= localR;
-    }
-    for (int i = 0; i < eraserPoints.length - 1; i++) {
-      if (_getDistanceToSegment(p, eraserPoints[i], eraserPoints[i + 1]) <= localR) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // Обработка масштабирования холста
   void _onScaleStart(ScaleStartDetails details) {
-    if (_activeAction != null) {
-      debugPrint('[CanvasGesture] _onScaleStart ignored: _activeAction is not null');
-      return;
-    }
+    final drawState = context.read<DrawBloc>().state;
+    if (_activeAction != null || drawState.currentTool == ToolType.eraser) return;
     setState(() {
       _isZooming = true;
       _previousScale = _scale;
       _normalizedFocalPoint = (details.localFocalPoint - _offset) / _scale;
-      debugPrint('[CanvasGesture] _onScaleStart: focal=${details.localFocalPoint}, scale=$_scale, offset=$_offset, normalized=$_normalizedFocalPoint');
     });
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
-    if (!_isZooming) {
-      debugPrint('[CanvasGesture] _onScaleUpdate ignored: _isZooming is false');
-      return;
-    }
+    if (!_isZooming) return;
     setState(() {
-      _scale = (_previousScale * details.scale).clamp(0.5, 4.0);
+      _scale = (_previousScale * details.scale).clamp(0.2, 8.0);
       _offset = details.localFocalPoint - _normalizedFocalPoint * _scale;
-      debugPrint('[CanvasGesture] _onScaleUpdate: scaleDet=${details.scale}, focal=${details.localFocalPoint}, scale=$_scale, offset=$_offset');
+      widget.scaleNotifier?.value = _scale;
     });
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
     setState(() {
       _isZooming = false;
-      debugPrint('[CanvasGesture] _onScaleEnd: _isZooming reset to false. scale=$_scale, offset=$_offset');
     });
+  }
+
+  // ──────────────────────────────────────────────
+  // Колесо мыши: Ctrl+scroll = zoom, scroll = pan
+  // ──────────────────────────────────────────────
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+
+    final bool isCtrl = HardwareKeyboard.instance.isControlPressed;
+    final bool isShift = HardwareKeyboard.instance.isShiftPressed;
+
+    setState(() {
+      if (isCtrl) {
+        // Зум в точку под курсором (аналог pinch-to-zoom для мыши)
+        final double zoomFactor = event.scrollDelta.dy > 0 ? 0.9 : 1.1;
+        final double newScale = (_scale * zoomFactor).clamp(0.1, 10.0);
+        final focalPoint = event.localPosition;
+        _offset = focalPoint - (focalPoint - _offset) * (newScale / _scale);
+        _scale = newScale;
+        widget.scaleNotifier?.value = _scale;
+      } else if (isShift) {
+        // Горизонтальный пан (Shift+колесо)
+        _offset = _offset + Offset(-event.scrollDelta.dy * 1.5, 0);
+      } else {
+        // Вертикальный и горизонтальный пан (трекпад / обычная мышь)
+        _offset = _offset + Offset(
+          -event.scrollDelta.dx * 1.5,
+          -event.scrollDelta.dy * 1.5,
+        );
+      }
+    });
+  }
+
+  // ──────────────────────────────────────────────
+  // Курсор мыши — зависит от активного инструмента
+  // ──────────────────────────────────────────────
+
+  MouseCursor _getCursorForTool(DrawState state) {
+    switch (state.currentTool) {
+      case ToolType.eraser:
+        // Скрываем системный курсор — вместо него рисуем круг через _buildEraserCursor
+        return SystemMouseCursors.none;
+      case ToolType.move:
+        return _selectedActionId != null
+            ? SystemMouseCursors.grab
+            : SystemMouseCursors.move;
+      case ToolType.pencil:
+      case ToolType.adhesions:
+      case ToolType.fibrosis:
+      case ToolType.arrow:
+        return SystemMouseCursors.precise;
+      case ToolType.endometrioma:
+      case ToolType.myoma:
+      case ToolType.infiltrate:
+        return SystemMouseCursors.precise;
+      case ToolType.iud:
+      case ToolType.foci:
+      case ToolType.customStamp:
+        return SystemMouseCursors.click;
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Оверлей курсора ластика (круг в экранных координатах)
+  // ──────────────────────────────────────────────
+
+  Widget _buildEraserCursor(DrawState state) {
+    // Радиус круга масштабируется вместе с холстом, но ограничен разумными рамками
+    final double radius = (state.currentStrokeWidth / 2 * _scale).clamp(4.0, 120.0);
+    final center = _eraserCursorPosition!;
+    return Positioned(
+      left: center.dx - radius,
+      top: center.dy - radius,
+      child: IgnorePointer(
+        child: Container(
+          width: radius * 2,
+          height: radius * 2,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.black54,
+              width: 1.5,
+            ),
+          ),
+          foregroundDecoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white70,
+              width: 0.5,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

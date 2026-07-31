@@ -16,11 +16,13 @@ class SaveProjectEvent extends ProjectEvent {
   final String projectName;
   final List<DrawAction> actions;
   final String? backgroundPath;
+  final String? patientId;
 
   SaveProjectEvent({
     required this.projectName,
     required this.actions,
     this.backgroundPath,
+    this.patientId,
   });
 }
 
@@ -28,11 +30,27 @@ class ExportProjectEvent extends ProjectEvent {
   final String projectName;
   final List<DrawAction> actions;
   final String? backgroundPath;
+  final String? patientId;
 
   ExportProjectEvent({
     required this.projectName,
     required this.actions,
     this.backgroundPath,
+    this.patientId,
+  });
+}
+
+class ExportPdfEvent extends ProjectEvent {
+  final String projectName;
+  final List<DrawAction> actions;
+  final String? backgroundPath;
+  final String? patientId;
+
+  ExportPdfEvent({
+    required this.projectName,
+    required this.actions,
+    this.backgroundPath,
+    this.patientId,
   });
 }
 
@@ -59,7 +77,8 @@ class ProjectLoaded extends ProjectState {
   final List<DrawAction> actions;
   final String? backgroundPath;
   final String filePath;
-  ProjectLoaded(this.actions, this.backgroundPath, this.filePath);
+  final String? patientId;
+  ProjectLoaded(this.actions, this.backgroundPath, this.filePath, this.patientId);
 }
 
 class ProjectSaved extends ProjectState {
@@ -126,6 +145,7 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
           projectName: event.projectName,
           actions: event.actions,
           backgroundPath: event.backgroundPath,
+          patientId: event.patientId,
         );
         final filePath = '$_selectedDirectoryPath/${event.projectName}.meddraw';
         currentProjectFilePath = filePath;
@@ -149,6 +169,7 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
           filename: event.projectName,
           actions: event.actions,
           backgroundPath: event.backgroundPath,
+          patientId: event.patientId,
         );
         emit(ProjectExported(outputPath));
         // Возвращаем состояние выбранной папки
@@ -158,16 +179,39 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
       }
     });
 
+    on<ExportPdfEvent>((event, emit) async {
+      if (_selectedDirectoryPath == null) {
+        emit(ProjectError('Сначала выберите рабочую папку'));
+        return;
+      }
+      emit(ProjectLoading());
+      try {
+        final outputPath = await projectRepository.exportToPdf(
+          directoryPath: _selectedDirectoryPath!,
+          filename: event.projectName,
+          actions: event.actions,
+          backgroundPath: event.backgroundPath,
+          patientId: event.patientId,
+        );
+        emit(ProjectExported(outputPath));
+        // Возвращаем состояние выбранной папки
+        emit(ProjectDirectorySelected(_selectedDirectoryPath!));
+      } catch (e) {
+        emit(ProjectError('Ошибка экспорта в PDF: $e'));
+      }
+    });
+
     on<LoadProjectEvent>((event, emit) async {
       emit(ProjectLoading());
       try {
         final ProjectData projectData = await projectRepository.loadProject(event.source);
         final path = event.source.path ?? event.source.name;
         currentProjectFilePath = path;
-        emit(ProjectLoaded(projectData.actions, projectData.backgroundPath, path));
+        emit(ProjectLoaded(projectData.actions, projectData.backgroundPath, path, projectData.patientId));
       } catch (e) {
         emit(ProjectError('Ошибка загрузки проекта: $e'));
       }
     });
+
   }
 }

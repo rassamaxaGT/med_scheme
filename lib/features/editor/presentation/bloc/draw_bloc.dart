@@ -98,5 +98,50 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         redoStack: [],
       ));
     });
+
+    on<SetPatientIdEvent>((event, emit) {
+      emit(state.copyWith(patientId: event.patientId));
+    });
+
+    on<ChangeFigoTypeEvent>((event, emit) {
+      emit(state.copyWith(currentFigoType: event.figoType));
+    });
+
+    on<ToggleLineDashedEvent>((event, emit) {
+      emit(state.copyWith(currentLineDashed: event.isDashed));
+    });
+
+    on<ImportCustomStampEvent>((event, emit) {
+      final updatedStamps = List<String>.from(state.customStamps);
+      if (!updatedStamps.contains(event.path)) {
+        updatedStamps.add(event.path);
+      }
+      emit(state.copyWith(
+        customStamps: updatedStamps,
+        customStampPath: event.path,
+        currentTool: ToolType.customStamp,
+      ));
+    });
+
+    on<SelectCustomStampEvent>((event, emit) {
+      emit(state.copyWith(
+        customStampPath: event.path,
+        currentTool: ToolType.customStamp,
+      ));
+    });
+
+    on<UpdateHistoryWithoutUndoEvent>((event, emit) {
+      emit(state.copyWith(
+        history: event.history,
+      ));
+    });
+
+    on<SaveUndoStateEvent>((event, emit) {
+      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(event.undoState);
+      emit(state.copyWith(
+        undoStack: updatedUndo,
+        redoStack: [],
+      ));
+    });
   }
 }
