@@ -65,4 +65,15 @@ subprojects {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
+
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "androidx.core" && requested.name == "core") {
+                useVersion("1.6.0")
+            }
+            if (requested.group == "androidx.core" && requested.name == "core-ktx") {
+                useVersion("1.6.0")
+            }
+        }
+    }
 }
