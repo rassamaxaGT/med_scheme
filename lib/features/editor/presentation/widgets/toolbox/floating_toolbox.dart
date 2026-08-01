@@ -15,12 +15,6 @@ class FloatingToolbox extends StatelessWidget {
   final ValueChanged<Offset> onDragUpdate;
   final VoidCallback? onDragStart;
   final VoidCallback? onDragEnd;
-  final VoidCallback onSelectFolder;
-  final VoidCallback onSaveProject;
-  final VoidCallback onOpenProject;
-  final VoidCallback onPickBackground;
-  final VoidCallback onDeleteBackground;
-  final bool hasBackground;
   final double? maxHeight;
 
   const FloatingToolbox({
@@ -31,12 +25,6 @@ class FloatingToolbox extends StatelessWidget {
     required this.onDragUpdate,
     this.onDragStart,
     this.onDragEnd,
-    required this.onSelectFolder,
-    required this.onSaveProject,
-    required this.onOpenProject,
-    required this.onPickBackground,
-    required this.onDeleteBackground,
-    required this.hasBackground,
     this.maxHeight,
   });
 
@@ -228,88 +216,6 @@ class FloatingToolbox extends StatelessWidget {
                       icon: Icons.arrow_outward,
                       isVertical: isVertical,
                     ),
-
-                    SizedBox(
-                      width: isVertical ? 0.0 : 4.0,
-                      height: isVertical ? 4.0 : 0.0,
-                    ),
-                    Container(
-                      height: isVertical ? 1.0 : 24.0,
-                      width: isVertical ? 24.0 : 1.0,
-                      color: Colors.white.withValues(alpha: 0.15),
-                    ),
-                    SizedBox(
-                      width: isVertical ? 0.0 : 4.0,
-                      height: isVertical ? 4.0 : 0.0,
-                    ),
-                    // Кнопка меню
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white),
-                      tooltip: 'Меню опций',
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'load_bg':
-                            onPickBackground();
-                            break;
-                          case 'delete_bg':
-                            onDeleteBackground();
-                            break;
-                          case 'select_folder':
-                            onSelectFolder();
-                            break;
-                          case 'open_project':
-                            onOpenProject();
-                            break;
-                          case 'save_project':
-                            onSaveProject();
-                            break;
-                        }
-                      },
-                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                        PopupMenuItem<String>(
-                          value: 'load_bg',
-                          child: ListTile(
-                            leading: const Icon(Icons.image),
-                            title: Text(hasBackground ? 'Сменить фон' : 'Загрузить фон'),
-                            dense: true,
-                          ),
-                        ),
-                        if (hasBackground)
-                          const PopupMenuItem<String>(
-                            value: 'delete_bg',
-                            child: ListTile(
-                              leading: Icon(Icons.no_photography, color: Colors.redAccent),
-                              title: Text('Удалить фон', style: TextStyle(color: Colors.redAccent)),
-                              dense: true,
-                            ),
-                          ),
-                        const PopupMenuDivider(),
-                        const PopupMenuItem<String>(
-                          value: 'select_folder',
-                          child: ListTile(
-                            leading: Icon(Icons.folder_open),
-                            title: Text('Выбрать папку проектов'),
-                            dense: true,
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'open_project',
-                          child: ListTile(
-                            leading: Icon(Icons.upload_file),
-                            title: Text('Открыть проект'),
-                            dense: true,
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'save_project',
-                          child: ListTile(
-                            leading: Icon(Icons.save),
-                            title: Text('Сохранить проект'),
-                            dense: true,
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -432,7 +338,9 @@ class SettingsBubble extends StatelessWidget {
       final isSelected = currentFigoType == type;
       final color = getFigoColor(type);
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 1.0),
+        padding: isVertical
+            ? const EdgeInsets.symmetric(vertical: 2.0)
+            : const EdgeInsets.symmetric(horizontal: 1.0),
         child: GestureDetector(
           onTap: () => onFigoTypeChanged(type),
           child: Container(
@@ -446,7 +354,7 @@ class SettingsBubble extends StatelessWidget {
               ),
             ),
             child: Text(
-              type,
+               type,
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
@@ -464,9 +372,8 @@ class SettingsBubble extends StatelessWidget {
             children: [
               const Text('FIGO', style: TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              Wrap(
-                direction: Axis.vertical,
-                spacing: 4,
+              Column(
+                mainAxisSize: MainAxisSize.min,
                 children: children,
               ),
             ],
@@ -482,19 +389,40 @@ class SettingsBubble extends StatelessWidget {
   }
 
   Widget _buildDashedToggle(BuildContext context, bool isVertical) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('Пунктир', style: TextStyle(fontSize: 11, color: Colors.white70)),
-        Checkbox(
-          value: currentLineDashed,
-          activeColor: Theme.of(context).colorScheme.primary,
-          onChanged: (val) {
-            if (val != null) onLineDashedChanged(val);
-          },
-        ),
-      ],
-    );
+    if (isVertical) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Пунктир', style: TextStyle(fontSize: 10, color: Colors.white70)),
+          const SizedBox(height: 2),
+          SizedBox(
+            height: 28,
+            width: 28,
+            child: Checkbox(
+              value: currentLineDashed,
+              activeColor: Theme.of(context).colorScheme.primary,
+              onChanged: (val) {
+                if (val != null) onLineDashedChanged(val);
+              },
+            ),
+          ),
+        ],
+      );
+    } else {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Пунктир', style: TextStyle(fontSize: 11, color: Colors.white70)),
+          Checkbox(
+            value: currentLineDashed,
+            activeColor: Theme.of(context).colorScheme.primary,
+            onChanged: (val) {
+              if (val != null) onLineDashedChanged(val);
+            },
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildCustomStampsSelector(BuildContext context, bool isVertical) {
@@ -514,59 +442,98 @@ class SettingsBubble extends StatelessWidget {
     }
 
     final children = <Widget>[
-      ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.1),
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-        icon: const Icon(Icons.add, size: 14),
-        label: const Text('Загрузить PNG', style: TextStyle(fontSize: 11)),
-        onPressed: pickStamp,
-      ),
+      isVertical
+          ? Tooltip(
+              message: 'Загрузить PNG штамп',
+              child: InkWell(
+                onTap: pickStamp,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 16),
+                ),
+              ),
+            )
+          : ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Загрузить PNG', style: TextStyle(fontSize: 11)),
+              onPressed: pickStamp,
+            ),
       if (stamps.isNotEmpty) ...[
-        const SizedBox(width: 8, height: 8),
+        SizedBox(width: isVertical ? 0 : 8, height: isVertical ? 8 : 0),
         ...stamps.map((path) {
           final isSelected = activePath == path;
           final filename = path.split(RegExp(r'[/\\]')).last;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
-            child: GestureDetector(
-              onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isSelected ? Colors.white : Colors.white24,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.image, size: 12, color: Colors.white70),
-                    const SizedBox(width: 4),
-                    Text(
-                      filename.length > 10 ? '${filename.substring(0, 8)}..' : filename,
-                      style: const TextStyle(fontSize: 10, color: Colors.white70),
+            child: isVertical
+                ? Tooltip(
+                    message: filename,
+                    child: GestureDetector(
+                      onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected ? Colors.white : Colors.white24,
+                          ),
+                        ),
+                        child: const Icon(Icons.image, size: 16, color: Colors.white70),
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                  )
+                : GestureDetector(
+                    onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected ? Colors.white : Colors.white24,
+                        ),
+                       ),
+                       child: Row(
+                         mainAxisSize: MainAxisSize.min,
+                         children: [
+                           const Icon(Icons.image, size: 12, color: Colors.white70),
+                           const SizedBox(width: 4),
+                           Text(
+                             filename.length > 10 ? '${filename.substring(0, 8)}..' : filename,
+                             style: const TextStyle(fontSize: 10, color: Colors.white70),
+                           ),
+                         ],
+                       ),
+                     ),
+                   ),
           );
         }),
       ] else ...[
-        const SizedBox(width: 8, height: 8),
-        const Text(
-          'Загрузите PNG штампы',
-          style: TextStyle(fontSize: 10, color: Colors.white38, fontStyle: FontStyle.italic),
+        SizedBox(width: isVertical ? 0 : 8, height: isVertical ? 8 : 0),
+        Text(
+          isVertical ? 'Нет' : 'Загрузите PNG штампы',
+          style: const TextStyle(fontSize: 10, color: Colors.white38, fontStyle: FontStyle.italic),
         ),
       ]
     ];
@@ -574,7 +541,7 @@ class SettingsBubble extends StatelessWidget {
     return isVertical
         ? Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: children,
           )
         : Row(

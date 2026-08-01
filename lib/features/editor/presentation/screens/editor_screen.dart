@@ -279,6 +279,123 @@ class _EditorScreenState extends State<EditorScreen> {
                 );
               },
             ),
+            PopupMenuButton<String>(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F4C81), // Classic Blue
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.folder, size: 14, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text(
+                      'Проект',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Icon(Icons.arrow_drop_down, size: 14, color: Colors.white),
+                  ],
+                ),
+              ),
+              onSelected: (value) {
+                switch (value) {
+                  case 'open':
+                    _openProject(context);
+                    break;
+                  case 'save':
+                    _showSaveDialog(context);
+                    break;
+                  case 'export':
+                    _exportCanvas(context);
+                    break;
+                  case 'load_bg':
+                    _pickBackgroundImage(context);
+                    break;
+                  case 'delete_bg':
+                    context.read<DrawBloc>().add(SetBackgroundEvent(null));
+                    break;
+                  case 'folder':
+                    EditorScreen.requestDirectoryWithNotice(context);
+                    break;
+                }
+              },
+              itemBuilder: (context) {
+                final drawState = context.read<DrawBloc>().state;
+                final hasBg = drawState.backgroundPath != null;
+                return [
+                  const PopupMenuItem(
+                    value: 'open',
+                    child: Row(
+                      children: [
+                        Icon(Icons.folder_open, size: 18),
+                        SizedBox(width: 8),
+                        Text('Открыть проект'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'save',
+                    child: Row(
+                      children: [
+                        Icon(Icons.save, size: 18),
+                        SizedBox(width: 8),
+                        Text('Сохранить проект'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'export',
+                    child: Row(
+                      children: [
+                        Icon(Icons.photo_library, size: 18),
+                        SizedBox(width: 8),
+                        Text('Экспортировать схему'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: 'load_bg',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.image, size: 18),
+                        const SizedBox(width: 8),
+                        Text(hasBg ? 'Сменить фоновое изображение' : 'Загрузить фоновое изображение'),
+                      ],
+                    ),
+                  ),
+                  if (hasBg)
+                    const PopupMenuItem(
+                      value: 'delete_bg',
+                      child: Row(
+                        children: [
+                          Icon(Icons.no_photography, size: 18, color: Colors.redAccent),
+                          SizedBox(width: 8),
+                          Text('Удалить фоновое изображение', style: TextStyle(color: Colors.redAccent)),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'folder',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings_suggest, size: 18),
+                        SizedBox(width: 8),
+                        Text('Выбрать рабочую папку'),
+                      ],
+                    ),
+                  ),
+                ];
+              },
+            ),
             BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
                 return Container(
@@ -427,29 +544,6 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                 ),
               ],
-            ),
-            
-            IconButton(
-              icon: const Icon(Icons.save),
-              tooltip: 'Сохранить проект',
-              onPressed: () => _showSaveDialog(context),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.only(right: 16, left: 8),
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F4C81),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                icon: const Icon(Icons.photo_library, size: 16),
-                label: const Text('Экспорт', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                onPressed: () => _exportCanvas(context),
-              ),
             ),
           ],
         ),
@@ -719,14 +813,6 @@ class _EditorScreenState extends State<EditorScreen> {
                       onDragStart: handleDragStart,
                       onDragUpdate: handleDragUpdate,
                       onDragEnd: handleDragEnd,
-                      onSelectFolder: () => EditorScreen.requestDirectoryWithNotice(context),
-                      onSaveProject: () => _showSaveDialog(context),
-                      onOpenProject: () => _openProject(context),
-                      onPickBackground: () => _pickBackgroundImage(context),
-                      onDeleteBackground: () {
-                        context.read<DrawBloc>().add(SetBackgroundEvent(null));
-                      },
-                      hasBackground: drawState.backgroundPath != null,
                       maxHeight: verticalHeight,
                     ),
                   );

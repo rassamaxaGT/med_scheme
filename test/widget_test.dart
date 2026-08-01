@@ -98,8 +98,8 @@ void main() {
     expect(find.byIcon(Icons.open_with), findsOneWidget);
     expect(find.byIcon(Icons.brush), findsOneWidget);
     
-    // Verify that the menu button is present
-    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    // Verify that the menu button is present in the AppBar
+    expect(find.byIcon(Icons.folder), findsOneWidget);
   });
 
   testWidgets('Drag toolbox to right, select pencil, draw and finish - should not throw and keep toolbox', (
