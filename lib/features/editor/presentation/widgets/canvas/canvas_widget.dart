@@ -60,6 +60,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   Offset? _eraserCursorPosition;
   List<DrawAction> _initialHistoryBeforeErase = [];
   bool _hasErasedAnything = false;
+  DateTime? _lastEraseTime; // Fix #6: throttle ластика
 
   // Флаги управления режимами ввода
   bool _isStylusActive = false;
@@ -70,8 +71,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   final Set<int> _activePointers = {};
   ToolType? _lastTool;
 
-  // Генератор уникальных ID для действий
-  String _generateId() => DateTime.now().millisecondsSinceEpoch.toString();
+  // Fix #15: толщина линии фиксируется при onPointerDown и не меняется в ходе штриха
+  double? _activeStrokeWidth;
+
+  // Fix #5: монотонный счётчик ID — исключает коллизии при быстром рисовании
+  int _idCounter = 0;
+  String _generateId() =>
+      '${DateTime.now().millisecondsSinceEpoch}_${_idCounter++}';
 
   @override
   void initState() {
@@ -538,6 +544,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   }
 
   void _eraseAtPoint(Offset canvasPoint, double eraserRadius, DrawState state) {
+    // Fix #6: throttle — не чаще одного раза за кадр (16 мс), иначе BLoC
+    // получает сотни событий в секунду и провоцирует подтормаживания.
+    final now = DateTime.now();
+    if (_lastEraseTime != null &&
+        now.difference(_lastEraseTime!).inMilliseconds < 16) {
+      return;
+    }
+    _lastEraseTime = now;
+
     final List<DrawAction> updatedHistory = List<DrawAction>.from(state.history);
     bool historyChanged = false;
 
@@ -756,9 +771,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       return;
     }
 
-    // Вычисляем толщину линии с учетом давления стилуса (если оно доступно)
-    final double pressure = event.pressure; // Значение от 0.0 до 1.0
-    final double strokeWidth = state.currentStrokeWidth * (pressure > 0.0 ? (0.5 + pressure) : 1.0);
+    // Fix #15: фиксируем толщину линии ОДИН РАЗ при нажатии.
+    // Пересчёт в каждом onPointerMove приводил к прыжкам ширины
+    // (финальная толщина штриха определялась последним событием Move).
+    final double pressure = event.pressure;
+    _activeStrokeWidth =
+        state.currentStrokeWidth * (pressure > 0.0 ? (0.5 + pressure) : 1.0);
+    final double strokeWidth = _activeStrokeWidth!;
 
     setState(() {
       if (state.currentTool == ToolType.pencil ||
@@ -891,8 +910,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
 
     setState(() {
-      final double pressure = event.pressure;
-      final double strokeWidth = state.currentStrokeWidth * (pressure > 0.0 ? (0.5 + pressure) : 1.0);
+      // Fix #15: используем толщину, зафиксированную в onPointerDown
+      final double strokeWidth = _activeStrokeWidth ?? state.currentStrokeWidth;
 
       if (_activeAction is StrokeAction) {
         _currentPoints.add(localPosition);
@@ -968,8 +987,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (_selectedActionId != null && _activeAction != null) {
         context.read<DrawBloc>().add(UpdateActionEvent(_activeAction!));
         setState(() {
+          // Fix #7: сохраняем финальное состояние как новую «оригинальную» точку отсчёта,
+          // чтобы следующий захват маркера не давал прыжка.
+          _originalActionForDrag = _activeAction;
           _activeAction = null;
-          _originalActionForDrag = null;
           _draggedHandle = null;
         });
       }
@@ -1008,6 +1029,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       setState(() {
         _activeAction = null;
         _currentPoints = [];
+        _activeStrokeWidth = null; // Fix #15: сбросить зафиксированную толщину
       });
     }
   }

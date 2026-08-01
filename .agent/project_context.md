@@ -1,6 +1,6 @@
 ﻿# Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-08-01_
 
 ---
 
@@ -9,6 +9,7 @@ _Last updated: 2026-07-29_
 - **Language & Framework**: Dart 3.x (SDK ^3.11.3), Flutter 3.x
 - **Primary Purpose**: «МедРисунок» is a specialized cross-platform drawing and annotation app for ultrasound (УЗИ) physicians. Works like a "medical coloring book" — doctors place standardized markers for pathologies (endometriosis, myomas, IUDs, adhesions) on anatomical schemes or imported scan images. Fully local; no patient data transmitted.
 - **Target Platforms**: Android / iOS (stylus-first) and Web (browser, deployed on Vercel).
+- **Version**: `1.0.0+3`
 - **Key Dependencies**:
   - `flutter_bloc ^8.1.3`: BLoC state management.
   - `get_it ^7.6.0`: Service locator / dependency injection.
@@ -28,7 +29,7 @@ _Last updated: 2026-07-29_
 
 ```
 lib/
-├── main.dart                        # App entry point + EditorScreen (~36 KB, refactor candidate)
+├── main.dart                        # App entry point + EditorScreen (~47 KB, refactor candidate)
 ├── core/
 │   ├── di/injection.dart            # GetIt DI registration
 │   └── utils/
@@ -60,7 +61,7 @@ lib/
         │   ├── draw_event.dart
         │   ├── draw_state.dart
         │   └── project_bloc.dart    # File I/O state: save/load/export
-        ├── screens/                 # (empty; EditorScreen is in main.dart)
+        ├── screens/                 # (empty; EditorScreen is still in main.dart)
         └── widgets/
             ├── canvas/
             │   ├── canvas_painter.dart  # CustomPainter: renders all DrawActions (~22 KB)
@@ -75,18 +76,19 @@ lib/
 
 ## 3. Core Entry Points & Initialization Flow
 
-- **Entry Point**: [main.dart](file:///d:/projects/med_scheme/lib/main.dart)
+- **Entry Point**: lib/main.dart
 - **Steps**:
   1. `WidgetsFlutterBinding.ensureInitialized()`
-  2. `initInjection()` — registers `ProjectRepository` (conditional import) and singletons via GetIt.
+  2. `await initInjection()` — registers `ProjectRepository` (conditional import) and singletons via GetIt.
   3. `runApp(MyApp())` — mounts `MultiBlocProvider` with `DrawBloc` + `ProjectBloc`, routes to `EditorScreen`.
-  4. `EditorScreen` — single screen, uses a `Stack`: `CanvasWidget` (full-screen), `FloatingToolbox` (positioned overlay), top AppBar actions.
+  4. `ProjectBloc` dispatches `InitializeProjectEvent()` on creation to restore last saved directory.
+  5. `EditorScreen` — single screen, uses a `Stack`: `CanvasWidget` (full-screen), `FloatingToolbox` (positioned overlay), top AppBar actions.
 
 ---
 
 ## 4. Core Domain Model
 
-File: [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/draw_action.dart)
+File: lib/features/editor/domain/entities/draw_action.dart
 
 | Class | Description |
 |---|---|
@@ -102,8 +104,8 @@ File: [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/doma
 
 ## 5. Rendering Architecture
 
-- **[CanvasWidget](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart)**: `Listener` + `GestureDetector`. Stylus pressure (`PointerEvent.pressure`), palm rejection (ignores fingers when stylus active), pinch-to-zoom/pan. Dispatches draw events to `DrawBloc`.
-- **[CanvasPainter](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_painter.dart)**: `CustomPainter`. Renders `backgroundImage`, then iterates `DrawBloc` state actions. Uses `ui.PathMetrics` for `infiltrate` barbed-wire effect and `adhesions` spiderweb effect. Text/arrows are drawn in screen-space (not canvas-space) so label size stays constant at any zoom level.
+- **CanvasWidget** (canvas_widget.dart): `Listener` + `GestureDetector`. Stylus pressure (`PointerEvent.pressure`), palm rejection (ignores fingers when stylus active), pinch-to-zoom/pan. Dispatches draw events to `DrawBloc`.
+- **CanvasPainter** (canvas_painter.dart): `CustomPainter`. Renders `backgroundImage`, then iterates `DrawBloc` state actions. Uses `ui.PathMetrics` for `infiltrate` barbed-wire effect and `adhesions` spiderweb effect. Text/arrows are drawn in screen-space (not canvas-space) so label size stays constant at any zoom level.
 
 ---
 
@@ -111,9 +113,9 @@ File: [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/doma
 
 | Abstraction File | Mobile/Desktop impl | Web impl |
 |---|---|---|
-| [image_loader.dart](file:///d:/projects/med_scheme/lib/core/utils/image_loader.dart) | `image_loader_io.dart` | `image_loader_web.dart` |
-| [web_helper.dart](file:///d:/projects/med_scheme/lib/core/utils/web_helper.dart) | `web_helper_stub.dart` (no-ops) | `web_helper_web.dart` (JS interop) |
-| [project_repository_provider.dart](file:///d:/projects/med_scheme/lib/features/editor/data/repositories/project_repository_provider.dart) | `project_repository_impl.dart` | `project_repository_web.dart` |
+| image_loader.dart | `image_loader_io.dart` | `image_loader_web.dart` |
+| web_helper.dart | `web_helper_stub.dart` (no-ops) | `web_helper_web.dart` (JS interop) |
+| project_repository_provider.dart | `project_repository_impl.dart` | `project_repository_web.dart` |
 
 ---
 
@@ -136,32 +138,38 @@ Serialization runs in a Dart isolate via `compute()` to avoid UI jank.
 - **Run Tests**: `flutter test`
 - **Analyze**: `flutter analyze`
 - **Format**: `dart format .`
+- **Deploy**: `.\deploy.ps1` (PowerShell script — builds web + deploys to Vercel)
 
 ---
 
 ## 9. Development Conventions & Guidelines
 
 - **State Management**: BLoC exclusively. No `setState` for business logic.
-- **DI**: Register in [injection.dart](file:///d:/projects/med_scheme/lib/core/di/injection.dart), resolve with `getIt<Type>()`.
+- **DI**: Register in lib/core/di/injection.dart, resolve with `getIt<Type>()`.
 - **Design Theme**: Material 3 dark, seed color `Color(0xFF0F4C81)` (medical blue).
-- **Toolbox**: [floating_toolbox.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/toolbox/floating_toolbox.dart) — draggable, glassmorphism-styled, minimum 48dp touch targets.
-- **Linting**: `flutter_lints` via [analysis_options.yaml](file:///d:/projects/med_scheme/analysis_options.yaml).
+- **Toolbox**: floating_toolbox.dart — draggable, glassmorphism-styled, minimum 48dp touch targets.
+- **Linting**: `flutter_lints` via analysis_options.yaml.
+- **Canvas local state**: Current stroke points are held locally in `CanvasWidget`; committed to `DrawBloc` only on `onPanEnd` / pointer-up.
 
 ---
 
 ## 10. Active Development Context
 
-- **Status**: All 5 implementation phases are **complete** (all tasks in [task.md](file:///d:/projects/med_scheme/.agent/plans/task.md) marked `[x]`).
+- **Status**: All 5 implementation phases are **complete**. Working tree is clean. Branch: `main`.
 - **Recent git commits**:
-  1. `65df3bf` — Added plain-text `PROJECT_DOCUMENTATION.txt`
-  2. `8d3bb5b` — Added `PROJECT_DOCUMENTATION.md` with architecture and spec
-  3. `c86a075` — Web release build for Vercel deployment
-  4. `ecd730d` — Initial commit: Added Flutter Web support and conditional imports
-- **Active Plans**:
-  - [ui_ux_specification.md](file:///d:/projects/med_scheme/.agent/plans/ui_ux_specification.md) — Floating toolbox design spec. Toolbox is already implemented.
-  - [architecture.md](file:///d:/projects/med_scheme/.agent/plans/architecture.md) — Architecture reference.
+  1. `e5a24da` — Fix Android build settings and test deployment script (v1.0.0+3)
+  2. `3f66b16` — Add deployment script and update project (v1.0.0+2)
+  3. `65df3bf` — docs: added plain-text PROJECT_DOCUMENTATION.txt
+  4. `8d3bb5b` — docs: added PROJECT_DOCUMENTATION.md with architecture and spec
+  5. `c86a075` — build: Web release for Vercel deployment
+- **Active Plans** (in `.agent/plans/`):
+  - task.md — All phases complete.
+  - ui_ux_specification.md — Floating toolbox design spec.
+  - implementation_plan.md — Full implementation plan.
+  - architecture.md — Architecture reference.
 - **Known Challenges / Refactor Candidates**:
-  - `main.dart` is ~36 KB — `EditorScreen` should be extracted to `presentation/screens/`.
-  - `canvas_widget.dart` (~33 KB) and `canvas_painter.dart` (~22 KB) are large; splitting by concern is a potential future improvement.
-  - Android SAF (`shared_storage`) requires careful persistable URI handling — URI must be picked once and stored in `SharedPreferences`.
+  - `main.dart` is ~47 KB — `EditorScreen` and all dialogs should be extracted to `presentation/screens/`.
+  - `canvas_widget.dart` (~33 KB) and `canvas_painter.dart` (~22 KB) are large; splitting is a future improvement.
+  - `presentation/screens/` directory exists but is currently empty.
+  - Android SAF (`shared_storage`) requires careful persistable URI handling.
   - Web: no `dart:io` — all file I/O uses browser Blob/download APIs via `web_helper_web.dart`.

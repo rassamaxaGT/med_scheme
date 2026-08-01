@@ -3,23 +3,23 @@ import '../../domain/entities/draw_action.dart';
 import 'draw_event.dart';
 import 'draw_state.dart';
 
+/// Максимальная глубина стека Undo/Redo. Ограничивает потребление памяти.
+const int _maxUndoSteps = 50;
+
+/// Обрезает стек до последних [_maxUndoSteps] записей.
+List<List<DrawAction>> _limited(List<List<DrawAction>> stack) {
+  if (stack.length <= _maxUndoSteps) return stack;
+  return stack.sublist(stack.length - _maxUndoSteps);
+}
+
 class DrawBloc extends Bloc<DrawEvent, DrawState> {
   DrawBloc() : super(DrawState.initial()) {
+    // ── Добавить действие ──────────────────────────────────────────────────
     on<AddActionEvent>((event, emit) {
       final updatedHistory = List<DrawAction>.from(state.history)..add(event.action);
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
-      emit(state.copyWith(
-        history: updatedHistory,
-        undoStack: updatedUndo,
-        redoStack: [], // Сбрасываем redoStack при добавлении нового действия
-      ));
-    });
-
-    on<UpdateActionEvent>((event, emit) {
-      final updatedHistory = state.history.map((action) {
-        return action.id == event.action.id ? event.action : action;
-      }).toList();
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(state.history),
+      );
       emit(state.copyWith(
         history: updatedHistory,
         undoStack: updatedUndo,
@@ -27,6 +27,22 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
+    // ── Обновить существующее действие (перемещение/ресайз) ───────────────
+    on<UpdateActionEvent>((event, emit) {
+      final updatedHistory = state.history.map((action) {
+        return action.id == event.action.id ? event.action : action;
+      }).toList();
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(state.history),
+      );
+      emit(state.copyWith(
+        history: updatedHistory,
+        undoStack: updatedUndo,
+        redoStack: [],
+      ));
+    });
+
+    // ── Установить фоновое изображение ────────────────────────────────────
     on<SetBackgroundEvent>((event, emit) {
       if (event.path == null) {
         emit(state.copyWith(clearBackground: true));
@@ -35,11 +51,14 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       }
     });
 
+    // ── Undo ──────────────────────────────────────────────────────────────
     on<UndoEvent>((event, emit) {
       if (state.undoStack.isEmpty) return;
       final updatedUndo = List<List<DrawAction>>.from(state.undoStack);
       final previousHistory = updatedUndo.removeLast();
-      final updatedRedo = List<List<DrawAction>>.from(state.redoStack)..add(state.history);
+      final updatedRedo = _limited(
+        List<List<DrawAction>>.from(state.redoStack)..add(state.history),
+      );
       emit(state.copyWith(
         history: previousHistory,
         undoStack: updatedUndo,
@@ -47,11 +66,14 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
+    // ── Redo ──────────────────────────────────────────────────────────────
     on<RedoEvent>((event, emit) {
       if (state.redoStack.isEmpty) return;
       final updatedRedo = List<List<DrawAction>>.from(state.redoStack);
       final nextHistory = updatedRedo.removeLast();
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(state.history),
+      );
       emit(state.copyWith(
         history: nextHistory,
         undoStack: updatedUndo,
@@ -59,8 +81,11 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
+    // ── Очистить холст ────────────────────────────────────────────────────
     on<ClearCanvasEvent>((event, emit) {
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(state.history),
+      );
       emit(state.copyWith(
         history: [],
         undoStack: updatedUndo,
@@ -80,9 +105,13 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       emit(state.copyWith(currentStrokeWidth: event.strokeWidth));
     });
 
+    // ── Удалить конкретное действие ───────────────────────────────────────
     on<DeleteActionEvent>((event, emit) {
-      final updatedHistory = state.history.where((a) => a.id != event.actionId).toList();
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
+      final updatedHistory =
+          state.history.where((a) => a.id != event.actionId).toList();
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(state.history),
+      );
       emit(state.copyWith(
         history: updatedHistory,
         undoStack: updatedUndo,
@@ -90,11 +119,13 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
+    // ── Загрузить историю из проекта (Fix #2) ─────────────────────────────
+    // При загрузке — ПОЛНОСТЬЮ СБРАСЫВАЕМ оба стека,
+    // чтобы Undo не позволял вернуться к предыдущему проекту.
     on<SetHistoryEvent>((event, emit) {
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(state.history);
       emit(state.copyWith(
         history: event.history,
-        undoStack: updatedUndo,
+        undoStack: [],
         redoStack: [],
       ));
     });
@@ -130,14 +161,16 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
+    // ── Тихое обновление истории (используется ластиком, без undoStack) ───
     on<UpdateHistoryWithoutUndoEvent>((event, emit) {
-      emit(state.copyWith(
-        history: event.history,
-      ));
+      emit(state.copyWith(history: event.history));
     });
 
+    // ── Сохранить точку Undo (ластик фиксирует состояние перед стиранием) ─
     on<SaveUndoStateEvent>((event, emit) {
-      final updatedUndo = List<List<DrawAction>>.from(state.undoStack)..add(event.undoState);
+      final updatedUndo = _limited(
+        List<List<DrawAction>>.from(state.undoStack)..add(event.undoState),
+      );
       emit(state.copyWith(
         undoStack: updatedUndo,
         redoStack: [],

@@ -694,6 +694,147 @@ class SettingsBubble extends StatelessWidget {
     }
   }
 
+  // ── Helpers для сборки секций — используются в обоих режимах ─────────────
+
+  /// Fix #13: общий виджет выбора цвета, работает в любой ориентации.
+  Widget _buildColorPicker(BuildContext context, bool isVertical) {
+    final colors = [
+      const Color(0xFF000000),
+      const Color(0xFFD32F2F),
+      const Color(0xFF388E3C),
+      const Color(0xFF1976D2),
+      const Color(0xFF5C4033),
+      const Color(0xFFFFC0CB),
+    ];
+
+    final swatches = colors.map((color) {
+      final isSelected = currentColor.toARGB32() == color.toARGB32();
+      return GestureDetector(
+        onTap: () => onColorChanged(color),
+        child: Padding(
+          padding: isVertical
+              ? const EdgeInsets.symmetric(vertical: 4.0)
+              : const EdgeInsets.symmetric(horizontal: 4.0),
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? Colors.white : Colors.white24,
+                width: isSelected ? 2.0 : 1.0,
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+
+    final advancedBtn = GestureDetector(
+      onTap: () => _openAdvancedColorPicker(context),
+      child: Padding(
+        padding: isVertical
+            ? const EdgeInsets.symmetric(vertical: 4.0)
+            : const EdgeInsets.symmetric(horizontal: 4.0),
+        child: const Icon(Icons.add_circle_outline, size: 22, color: Colors.white70),
+      ),
+    );
+
+    return isVertical
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [...swatches, advancedBtn],
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [...swatches, advancedBtn],
+          );
+  }
+
+  /// Fix #13: общий виджет слайдера толщины, работает в любой ориентации.
+  Widget _buildThicknessSlider(BuildContext context, bool isVertical, bool showColor) {
+    final preview = Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      child: Container(
+        width: currentStrokeWidth.clamp(2.0, 20.0),
+        height: currentStrokeWidth.clamp(2.0, 20.0),
+        decoration: BoxDecoration(
+          color: showColor ? currentColor : Colors.white70,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+
+    final label = Text(
+      '${currentStrokeWidth.round()} px',
+      style: TextStyle(fontSize: isVertical ? 10 : 11, color: Colors.white70),
+    );
+
+    final sliderThemeData = SliderTheme.of(context).copyWith(
+      trackHeight: 2.0,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
+      activeTrackColor: Theme.of(context).colorScheme.primary,
+      inactiveTrackColor: Colors.white24,
+      thumbColor: Colors.white,
+    );
+
+    final slider = Slider(
+      min: 1.0,
+      max: 20.0,
+      value: currentStrokeWidth,
+      onChanged: onThicknessChanged,
+    );
+
+    if (isVertical) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          preview,
+          const SizedBox(height: 8),
+          RotatedBox(
+            quarterTurns: 3,
+            child: SizedBox(
+              width: 100,
+              height: 24,
+              child: SliderTheme(data: sliderThemeData, child: slider),
+            ),
+          ),
+          const SizedBox(height: 8),
+          label,
+        ],
+      );
+    } else {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          preview,
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 120,
+            height: 24,
+            child: SliderTheme(data: sliderThemeData, child: slider),
+          ),
+          const SizedBox(width: 8),
+          label,
+        ],
+      );
+    }
+  }
+
+  /// Разделитель между секциями (вертикальный или горизонтальный).
+  Widget _buildDivider(bool isVertical) => Container(
+        height: isVertical ? 1.0 : 16.0,
+        width: isVertical ? 16.0 : 1.0,
+        color: Colors.white24,
+        margin: isVertical
+            ? const EdgeInsets.symmetric(vertical: 12.0)
+            : const EdgeInsets.symmetric(horizontal: 12.0),
+      );
+
   @override
   Widget build(BuildContext context) {
     final bool showColor = currentTool == ToolType.pencil ||
@@ -710,17 +851,26 @@ class SettingsBubble extends StatelessWidget {
         currentTool == ToolType.eraser;
 
     final bool showCustomStamps = currentTool == ToolType.customStamp;
-
-    final colors = [
-      const Color(0xFF000000), // Черный
-      const Color(0xFFD32F2F), // Красный
-      const Color(0xFF388E3C), // Зеленый
-      const Color(0xFF1976D2), // Синий
-      const Color(0xFF5C4033), // Коричневый (шоколад)
-      const Color(0xFFFFC0CB), // Розовый
-    ];
-
     final bool isVertical = orientation != ToolboxOrientation.horizontal;
+
+    // Fix #13: строим единый список дочерних виджетов,
+    // независимый от ориентации — затем оборачиваем в Flex с нужным Axis.
+    final children = <Widget>[
+      if (currentTool == ToolType.myoma) ...[
+        _buildFigoSelector(context, isVertical),
+        _buildDivider(isVertical),
+      ],
+      if (currentTool == ToolType.arrow) ...[
+        _buildDashedToggle(context, isVertical),
+        _buildDivider(isVertical),
+      ],
+      if (showCustomStamps) _buildCustomStampsSelector(context, isVertical),
+      if (showColor) ...[
+        _buildColorPicker(context, isVertical),
+        if (showThickness) _buildDivider(isVertical),
+      ],
+      if (showThickness) _buildThicknessSlider(context, isVertical, showColor),
+    ];
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -734,7 +884,7 @@ class SettingsBubble extends StatelessWidget {
                 ? const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0)
                 : const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             decoration: BoxDecoration(
-              color: const Color(0xCC2A2A2A), // Чуть светлее тулбара для контраста
+              color: const Color(0xCC2A2A2A),
               borderRadius: BorderRadius.circular(16.0),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.15),
@@ -743,222 +893,12 @@ class SettingsBubble extends StatelessWidget {
             ),
             child: SingleChildScrollView(
               scrollDirection: isVertical ? Axis.vertical : Axis.horizontal,
-              child: isVertical
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (currentTool == ToolType.myoma) ...[
-                          _buildFigoSelector(context, true),
-                          const SizedBox(height: 12),
-                        ],
-                        if (currentTool == ToolType.arrow) ...[
-                          _buildDashedToggle(context, true),
-                          const SizedBox(height: 12),
-                        ],
-                        if (showCustomStamps) ...[
-                          _buildCustomStampsSelector(context, true),
-                        ],
-                        if (showColor) ...[
-                          // Выбор цвета (вертикальный)
-                          ...colors.map((color) {
-                            final isSelected = currentColor.toARGB32() == color.toARGB32();
-                            return GestureDetector(
-                              onTap: () => onColorChanged(color),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected ? Colors.white : Colors.white24,
-                                      width: isSelected ? 2.0 : 1.0,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                          GestureDetector(
-                            onTap: () => _openAdvancedColorPicker(context),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 4.0),
-                              child: Icon(
-                                Icons.add_circle_outline,
-                                size: 22,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                          if (showThickness)
-                            Container(
-                              width: 16,
-                              height: 1,
-                              color: Colors.white24,
-                              margin: const EdgeInsets.symmetric(vertical: 12.0),
-                            ),
-                        ],
-                        if (showThickness) ...[
-                          // Превью толщины (закрашенный кружок)
-                          Container(
-                            width: 24,
-                            height: 24,
-                            alignment: Alignment.center,
-                            child: Container(
-                              width: currentStrokeWidth.clamp(2.0, 20.0),
-                              height: currentStrokeWidth.clamp(2.0, 20.0),
-                              decoration: BoxDecoration(
-                                color: showColor ? currentColor : Colors.white70,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // Слайдер толщины (вертикальный, повернут на 270 град)
-                          RotatedBox(
-                            quarterTurns: 3,
-                            child: SizedBox(
-                              width: 100,
-                              height: 24,
-                              child: SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 2.0,
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
-                                  activeTrackColor: Theme.of(context).colorScheme.primary,
-                                  inactiveTrackColor: Colors.white24,
-                                  thumbColor: Colors.white,
-                                ),
-                                child: Slider(
-                                  min: 1.0,
-                                  max: 20.0,
-                                  value: currentStrokeWidth,
-                                  onChanged: onThicknessChanged,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${currentStrokeWidth.round()} px',
-                            style: const TextStyle(fontSize: 10, color: Colors.white70),
-                          ),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (currentTool == ToolType.myoma) ...[
-                          _buildFigoSelector(context, false),
-                          Container(
-                            height: 16,
-                            width: 1,
-                            color: Colors.white24,
-                            margin: const EdgeInsets.symmetric(horizontal: 12.0),
-                          ),
-                        ],
-                        if (currentTool == ToolType.arrow) ...[
-                          _buildDashedToggle(context, false),
-                          Container(
-                            height: 16,
-                            width: 1,
-                            color: Colors.white24,
-                            margin: const EdgeInsets.symmetric(horizontal: 12.0),
-                          ),
-                        ],
-                        if (showCustomStamps) ...[
-                          _buildCustomStampsSelector(context, false),
-                        ],
-                        if (showColor) ...[
-                          // Выбор цвета (горизонтальный)
-                          ...colors.map((color) {
-                            final isSelected = currentColor.toARGB32() == color.toARGB32();
-                            return GestureDetector(
-                              onTap: () => onColorChanged(color),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected ? Colors.white : Colors.white24,
-                                      width: isSelected ? 2.0 : 1.0,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                          GestureDetector(
-                            onTap: () => _openAdvancedColorPicker(context),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4.0),
-                              child: Icon(
-                                Icons.add_circle_outline,
-                                size: 22,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                          if (showThickness)
-                            Container(
-                              height: 16,
-                              width: 1,
-                              color: Colors.white24,
-                              margin: const EdgeInsets.symmetric(horizontal: 12.0),
-                            ),
-                        ],
-                        if (showThickness) ...[
-                          // Превью толщины (закрашенный кружок)
-                          Container(
-                            width: 24,
-                            height: 24,
-                            alignment: Alignment.center,
-                            child: Container(
-                              width: currentStrokeWidth.clamp(2.0, 20.0),
-                              height: currentStrokeWidth.clamp(2.0, 20.0),
-                              decoration: BoxDecoration(
-                                color: showColor ? currentColor : Colors.white70,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Слайдер толщины
-                          SizedBox(
-                            width: 120,
-                            height: 24,
-                            child: SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                trackHeight: 2.0,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12.0),
-                                activeTrackColor: Theme.of(context).colorScheme.primary,
-                                inactiveTrackColor: Colors.white24,
-                                thumbColor: Colors.white,
-                              ),
-                              child: Slider(
-                                min: 1.0,
-                                max: 20.0,
-                                value: currentStrokeWidth,
-                                onChanged: onThicknessChanged,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${currentStrokeWidth.round()} px',
-                            style: const TextStyle(fontSize: 11, color: Colors.white70),
-                          ),
-                        ],
-                      ],
-                    ),
+              child: Flex(
+                direction: isVertical ? Axis.vertical : Axis.horizontal,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: children,
+              ),
             ),
           ),
         ),
@@ -966,3 +906,4 @@ class SettingsBubble extends StatelessWidget {
     );
   }
 }
+

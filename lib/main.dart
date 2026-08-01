@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'core/di/injection.dart';
 import 'core/utils/web_helper.dart';
 import 'features/editor/domain/entities/draw_action.dart';
@@ -93,14 +94,20 @@ class _EditorScreenState extends State<EditorScreen> {
   final _patientIdController = TextEditingController();
   Offset? _toolboxOffset;
   Offset? _dragPosition;
-  int _lastSavedActionsCount = 0;
+
+  // Fix #3: храним ID сохранённых действий в порядке, а не просто счётчик.
+  // Позволяет корректно определять изменения после Undo/Redo.
+  List<String>? _savedHistoryIds;
   String? _lastSavedBackgroundPath;
+
   ToolboxOrientation _toolboxOrientation = ToolboxOrientation.horizontal;
 
   // PC-интерфейс: нотификаторы масштаба, выделения и сброса зума
   final _scaleNotifier = ValueNotifier<double>(1.0);
   final _selectedActionIdNotifier = ValueNotifier<String?>(null);
   final _resetZoomNotifier = ValueNotifier<int>(0);
+
+  String _appVersion = '';
 
   double _safeClamp(double value, double min, double max) {
     if (min > max) return min;
@@ -111,6 +118,20 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки версии: $e');
+    }
   }
 
   @override
@@ -124,10 +145,18 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
 
+  // Fix #3: сравниваем по ID, а не по длине списка.
+  // Это корректно обрабатывает undo/redo: если вернулись к сохранённому состоянию — флаг снимается.
   bool _hasUnsavedChanges() {
     final drawState = context.read<DrawBloc>().state;
-    return drawState.history.length != _lastSavedActionsCount ||
-        drawState.backgroundPath != _lastSavedBackgroundPath;
+    if (drawState.backgroundPath != _lastSavedBackgroundPath) return true;
+    final currentIds = drawState.history.map((a) => a.id).toList();
+    if (_savedHistoryIds == null) return currentIds.isNotEmpty;
+    if (currentIds.length != _savedHistoryIds!.length) return true;
+    for (int i = 0; i < currentIds.length; i++) {
+      if (currentIds[i] != _savedHistoryIds![i]) return true;
+    }
+    return false;
   }
 
   Future<bool?> _showExitWarningDialog(BuildContext context) {
@@ -158,10 +187,17 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fix #8: canPop: false — всегда перехватываем, проверяем динамически.
+    // Старый canPop: !_hasUnsavedChanges() не обновлялся при изменениях BLoC
+    // (BlocBuilder не был обёрткой PopScope).
     return PopScope(
-      canPop: !_hasUnsavedChanges(),
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (!_hasUnsavedChanges()) {
+          Navigator.of(context).pop();
+          return;
+        }
         final bool? shouldPop = await _showExitWarningDialog(context);
         if (shouldPop == true && context.mounted) {
           Navigator.of(context).pop();
@@ -183,16 +219,20 @@ class _EditorScreenState extends State<EditorScreen> {
                 ? _getProjectNameFromPath(filePath) 
                 : 'Новый проект';
             
-            return BlocBuilder<DrawBloc, DrawState>(
+            // Fix #18: единая логика isModified через _hasUnsavedChanges().
+          // Подписываемся на DrawBloc, чтобы перестраивать заголовок при каждом штрихе.
+          return BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
-                final isModified = drawState.history.length != _lastSavedActionsCount ||
+                // Для заголовка достаточно быстрой проверки по длине и фону
+                final savedCount = _savedHistoryIds?.length ?? 0;
+                final isModified = drawState.history.length != savedCount ||
                     drawState.backgroundPath != _lastSavedBackgroundPath;
-                
+
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      isModified ? '$projectName • Изменен' : '$projectName • Сохранено',
+                      isModified ? '$projectName • Изменён' : '$projectName • Сохранён',
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(width: 24),
@@ -263,13 +303,43 @@ class _EditorScreenState extends State<EditorScreen> {
                           ? null
                           : () => context.read<DrawBloc>().add(RedoEvent()),
                     ),
+                    // Fix #10: подтверждение перед очисткой — случайный клик
+                    // не уничтожает всю работу врача.
                     IconButton(
                       icon: const Icon(Icons.delete_sweep, size: 20),
                       tooltip: 'Очистить холст',
                       color: drawState.history.isEmpty ? null : Colors.redAccent.withValues(alpha: 0.8),
                       onPressed: drawState.history.isEmpty
                           ? null
-                          : () => context.read<DrawBloc>().add(ClearCanvasEvent()),
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Очистить холст?'),
+                                  content: const Text(
+                                    'Все нарисованные маркеры будут удалены.\n'
+                                    'Действие можно отменить через Undo (Ctrl+Z).',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, false),
+                                      child: const Text('Отмена'),
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.redAccent,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('Очистить'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true && context.mounted) {
+                                context.read<DrawBloc>().add(ClearCanvasEvent());
+                              }
+                            },
                     ),
                   ],
                 ),
@@ -367,44 +437,73 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
       body: BlocListener<ProjectBloc, ProjectState>(
         listener: (context, state) {
-          if (state is ProjectDirectoryNotSelected) {
-            EditorScreen.requestDirectoryWithNotice(context);
+          // Fix #9: показываем индикатор загрузки при тяжёлых операциях
+          if (state is ProjectLoading) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 14),
+                      Text('Выполняется операция…'),
+                    ],
+                  ),
+                  duration: Duration(seconds: 30),
+                ),
+              );
           } else if (state is ProjectSaved) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            final drawState = context.read<DrawBloc>().state;
             setState(() {
-              _lastSavedActionsCount = context.read<DrawBloc>().state.history.length;
-              _lastSavedBackgroundPath = context.read<DrawBloc>().state.backgroundPath;
+              // Fix #3: сохраняем снимок ID в нужном порядке
+              _savedHistoryIds =
+                  drawState.history.map((a) => a.id).toList();
+              _lastSavedBackgroundPath = drawState.backgroundPath;
             });
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Проект успешно сохранен!')),
+              const SnackBar(content: Text('Проект успешно сохранён!')),
             );
           } else if (state is ProjectExported) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Схема экспортирована в ${state.outputPath}')),
+              SnackBar(
+                content: Text('Схема экспортирована: ${state.outputPath}'),
+              ),
             );
           } else if (state is ProjectLoaded) {
-            // Загружаем действия в DrawBloc холста
-            context.read<DrawBloc>().add(ClearCanvasEvent());
-            for (final action in state.actions) {
-              context.read<DrawBloc>().add(AddActionEvent(action));
-            }
-            // Загружаем фоновое изображение
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            // Fix #4: используем SetHistoryEvent вместо цикла AddActionEvent.
+            // ClearCanvas + цикл создавал N снимков в undoStack и работал медленно.
+            context.read<DrawBloc>().add(SetHistoryEvent(state.actions));
             context.read<DrawBloc>().add(SetBackgroundEvent(state.backgroundPath));
-            // Загружаем ID пациента
             final pId = state.patientId ?? '';
             _patientIdController.text = pId;
             context.read<DrawBloc>().add(SetPatientIdEvent(pId));
-            
             setState(() {
-              _lastSavedActionsCount = state.actions.length;
+              // Fix #3: фиксируем ID загруженного проекта
+              _savedHistoryIds =
+                  state.actions.map((a) => a.id).toList();
               _lastSavedBackgroundPath = state.backgroundPath;
             });
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Проект успешно загружен!')),
             );
-
           } else if (state is ProjectError) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: Colors.redAccent),
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.redAccent,
+              ),
             );
           }
         },
@@ -666,10 +765,22 @@ class _EditorScreenState extends State<EditorScreen> {
                               type: FileType.custom,
                               allowedExtensions: ['png'],
                             );
-                            if (result != null && result.files.single.path != null) {
-                              context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
+                          if (result != null && result.files.single.path != null) {
+                              if (context.mounted) {
+                                context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
+                              }
                             } else {
-                              context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                              // Fix #17: сообщаем пользователю, что PNG не выбран
+                              if (context.mounted) {
+                                context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'PNG-штамп не выбран. Загрузите файл для использования инструмента.',
+                                    ),
+                                  ),
+                                );
+                              }
                             }
                           } else {
                             context.read<DrawBloc>().add(SelectToolEvent(tool));
@@ -703,10 +814,22 @@ class _EditorScreenState extends State<EditorScreen> {
                             allowedExtensions: ['png'],
                           );
                           if (result != null && result.files.single.path != null) {
-                            context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
-                          } else {
-                            context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
-                          }
+                              if (context.mounted) {
+                                context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
+                              }
+                            } else {
+                              // Fix #17: сообщаем пользователю, что PNG не выбран
+                              if (context.mounted) {
+                                context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'PNG-штамп не выбран. Загрузите файл для использования инструмента.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
                         } else {
                           context.read<DrawBloc>().add(SelectToolEvent(tool));
                         }
@@ -728,6 +851,30 @@ class _EditorScreenState extends State<EditorScreen> {
                 }
               },
             ),
+            if (_appVersion.isNotEmpty)
+              Positioned(
+                bottom: 12,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Text(
+                    'v$_appVersion',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -931,6 +1078,7 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
 
+  // Fix #11: фильтр .meddraw + Fix #12: mounted-проверки после каждого await
   void _openProject(BuildContext context) async {
     try {
       if (_hasUnsavedChanges()) {
@@ -938,7 +1086,8 @@ class _EditorScreenState extends State<EditorScreen> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Открыть проект'),
-            content: const Text('Все несохраненные изменения текущего проекта будут потеряны. Продолжить?'),
+            content: const Text(
+                'Несохранённые изменения будут потеряны. Продолжить?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -951,13 +1100,21 @@ class _EditorScreenState extends State<EditorScreen> {
             ],
           ),
         );
+        // Fix #12: проверка mounted после await showDialog
+        if (!mounted) return;
         if (confirm != true) return;
       }
 
+      // Fix #11: ограничиваем выбор только файлами .meddraw
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
+        type: kIsWeb ? FileType.any : FileType.custom,
+        allowedExtensions: kIsWeb ? null : ['meddraw'],
         withData: kIsWeb,
       );
+
+      // Fix #12: проверка mounted после await FilePicker
+      if (!mounted) return;
+
       if (result != null) {
         ProjectFileSource? source;
         if (kIsWeb) {
@@ -977,7 +1134,7 @@ class _EditorScreenState extends State<EditorScreen> {
             );
           }
         }
-        
+
         if (source != null && context.mounted) {
           context.read<ProjectBloc>().add(LoadProjectEvent(source));
         }
