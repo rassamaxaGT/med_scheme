@@ -1,6 +1,6 @@
-﻿# Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
+# Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
-_Last updated: 2026-08-01_
+_Last updated: 2026-08-01 (v1.0.0+4)_
 
 ---
 
@@ -9,7 +9,7 @@ _Last updated: 2026-08-01_
 - **Language & Framework**: Dart 3.x (SDK ^3.11.3), Flutter 3.x
 - **Primary Purpose**: «МедРисунок» is a specialized cross-platform drawing and annotation app for ultrasound (УЗИ) physicians. Works like a "medical coloring book" — doctors place standardized markers for pathologies (endometriosis, myomas, IUDs, adhesions) on anatomical schemes or imported scan images. Fully local; no patient data transmitted.
 - **Target Platforms**: Android / iOS (stylus-first) and Web (browser, deployed on Vercel).
-- **Version**: `1.0.0+3`
+- **Version**: `1.0.0+4`
 - **Key Dependencies**:
   - `flutter_bloc ^8.1.3`: BLoC state management.
   - `get_it ^7.6.0`: Service locator / dependency injection.
@@ -19,6 +19,7 @@ _Last updated: 2026-08-01_
   - `file_picker ^8.0.0`: Cross-platform file selection dialog.
   - `shared_preferences ^2.2.3`: Lightweight persistent prefs (last directory URI, etc.).
   - `pdf ^3.10.8`: PDF export of completed annotation sheets.
+  - `package_info_plus ^9.0.1`: Runtime version/build number display in the About dialog.
 
 ---
 
@@ -150,18 +151,21 @@ Serialization runs in a Dart isolate via `compute()` to avoid UI jank.
 - **Toolbox**: floating_toolbox.dart — draggable, glassmorphism-styled, minimum 48dp touch targets.
 - **Linting**: `flutter_lints` via analysis_options.yaml.
 - **Canvas local state**: Current stroke points are held locally in `CanvasWidget`; committed to `DrawBloc` only on `onPanEnd` / pointer-up.
+- **Unsaved-changes tracking**: Compares full action-ID lists (`List<String> _savedHistoryIds`), not just list length — correctly survives Undo/Redo (fix #3, v1.0.0+4).
+- **Canvas clear safety**: "Clear canvas" action shows a confirmation dialog before dispatching `ClearCanvasEvent` (fix #10, v1.0.0+4).
+- **PopScope pattern**: `canPop: false` + manual `Navigator.pop()` in `onPopInvokedWithResult` — avoids stale `canPop` values with BLoC state (fix #8, v1.0.0+4).
 
 ---
 
 ## 10. Active Development Context
 
-- **Status**: All 5 implementation phases are **complete**. Working tree is clean. Branch: `main`.
+- **Status**: All 5 implementation phases are **complete**. Working tree: only `deploy.ps1` modified locally. Branch: `main`.
 - **Recent git commits**:
-  1. `e5a24da` — Fix Android build settings and test deployment script (v1.0.0+3)
-  2. `3f66b16` — Add deployment script and update project (v1.0.0+2)
-  3. `65df3bf` — docs: added plain-text PROJECT_DOCUMENTATION.txt
-  4. `8d3bb5b` — docs: added PROJECT_DOCUMENTATION.md with architecture and spec
-  5. `c86a075` — build: Web release for Vercel deployment
+  1. `e9c2414` — Добавлено отображение версии и исправлены ошибки (v1.0.0+4) — added `package_info_plus`, fixed unsaved-changes tracking, PopScope, clear confirmation.
+  2. `e5a24da` — Fix Android build settings and test deployment script (v1.0.0+3)
+  3. `3f66b16` — Add deployment script and update project (v1.0.0+2)
+  4. `65df3bf` — docs: added plain-text PROJECT_DOCUMENTATION.txt
+  5. `8d3bb5b` — docs: added PROJECT_DOCUMENTATION.md with architecture and spec
 - **Active Plans** (in `.agent/plans/`):
   - task.md — All phases complete.
   - ui_ux_specification.md — Floating toolbox design spec.

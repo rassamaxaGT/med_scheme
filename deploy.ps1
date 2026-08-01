@@ -1,10 +1,14 @@
-param (
+﻿param (
     [Parameter(Mandatory=$true)]
     [string]$Version,
 
     [Parameter(Mandatory=$true)]
     [string]$Message
 )
+
+# Установка кодировки UTF-8 для корректного вывода кириллицы в консоли PowerShell
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ErrorActionPreference = "Stop"
 
@@ -20,7 +24,7 @@ $Pattern = "(?m)^version:\s+(\S+)"
 if ($Content -match $Pattern) {
     Write-Host "Текущая версия: $($Matches[1])" -ForegroundColor Gray
     $Content = $Content -replace $Pattern, "version: $Version"
-    Set-Content $PubspecPath $Content
+    Set-Content -Path $PubspecPath -Value $Content -Encoding utf8
     Write-Host "Версия обновлена на: $Version" -ForegroundColor Green
 } else {
     Write-Error "Не удалось найти строку 'version:' в pubspec.yaml"
@@ -42,3 +46,4 @@ git commit -m "$Message (v$Version)"
 git push
 
 Write-Host "`n=== Сборка и деплой успешно завершены! ===" -ForegroundColor Green
+

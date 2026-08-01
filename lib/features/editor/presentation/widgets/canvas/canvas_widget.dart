@@ -161,15 +161,16 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         return ClipRect(
           child: Listener(
             // Listener для низкоуровневой обработки касаний, стилуса и колеса мыши
-            onPointerDown: (event) => _onPointerDown(event, state),
-            onPointerMove: (event) => _onPointerMove(event, state),
-            onPointerUp: (event) => _onPointerUp(event, state),
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
             onPointerCancel: (event) {
+              final activeState = context.read<DrawBloc>().state;
               _activePointers.remove(event.pointer);
               if (_activePointers.length < 2) {
                 _isZooming = false;
               }
-              if (state.currentTool == ToolType.eraser) {
+              if (activeState.currentTool == ToolType.eraser) {
                 setState(() {
                   _initialHistoryBeforeErase = [];
                   _hasErasedAnything = false;
@@ -182,7 +183,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             child: MouseRegion(
               cursor: _getCursorForTool(state),
               onHover: (event) {
-                if (state.currentTool == ToolType.eraser && mounted) {
+                final activeState = context.read<DrawBloc>().state;
+                if (activeState.currentTool == ToolType.eraser && mounted) {
                   setState(() => _eraserCursorPosition = event.localPosition);
                 }
               },
@@ -296,10 +298,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     final bounds = CanvasPainter.getActionBounds(selected);
     if (bounds == Rect.zero) return const SizedBox.shrink();
 
-    // Переводим bounds холста в экранные координаты с учётом Zoom/Pan
-    final screenLeft = bounds.left * _scale + _offset.dx;
-    final screenTop = bounds.top * _scale + _offset.dy;
-    final screenRight = bounds.right * _scale + _offset.dx;
+    final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
+    final baseSize = bgImage != null
+        ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
+        : const Size(800.0, 600.0);
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
+    final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
+
+    final double drawScaleX = drawRect.width / baseSize.width;
+    final double drawScaleY = drawRect.height / baseSize.height;
+
+    // Переводим bounds холста в экранные координаты с учётом Zoom/Pan и центрирования
+    final screenLeft = (bounds.left * drawScaleX + drawRect.left) * _scale + _offset.dx;
+    final screenTop = (bounds.top * drawScaleY + drawRect.top) * _scale + _offset.dy;
+    final screenRight = (bounds.right * drawScaleX + drawRect.left) * _scale + _offset.dx;
     final buttonX = (screenLeft + screenRight) / 2 - 20; // по центру по X
     final buttonY = screenTop - 44.0; // чуть выше рамки
 
@@ -355,9 +368,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   double _getDistanceToAction(Offset p, DrawAction action) {
     if (action is StrokeAction) {
       if (action.points.isEmpty) return double.infinity;
+      if (action.points.length == 1) return (p - action.points.first).distance;
       double minDistance = double.infinity;
-      for (final strokePoint in action.points) {
-        final dist = (p - strokePoint).distance;
+      for (int i = 0; i < action.points.length - 1; i++) {
+        final dist = _getDistanceToSegment(p, action.points[i], action.points[i + 1]);
         if (dist < minDistance) {
           minDistance = dist;
         }
@@ -538,12 +552,28 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     return original;
   }
 
-  // Преобразование глобальных экранных координат в координаты холста с учетом Zoom/Pan
+  // Преобразование глобальных экранных координат в координаты холста с учетом Zoom/Pan и центрирования
   Offset _screenToCanvas(Offset screenOffset) {
-    return (screenOffset - _offset) / _scale;
+    // 1. Обратное преобразование масштаба и сдвига Zoom/Pan
+    final unzoomed = (screenOffset - _offset) / _scale;
+
+    // 2. Обратное преобразование центрирования и вписывания contain-бокса
+    final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
+    final baseSize = bgImage != null
+        ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
+        : const Size(800.0, 600.0);
+
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
+
+    final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
+
+    final double dx = (unzoomed.dx - drawRect.left) * (baseSize.width / drawRect.width);
+    final double dy = (unzoomed.dy - drawRect.top) * (baseSize.height / drawRect.height);
+    return Offset(dx, dy);
   }
 
-  void _eraseAtPoint(Offset canvasPoint, double eraserRadius, DrawState state) {
+  void _eraseAtPoint(Offset canvasPoint, double eraserRadius) {
     // Fix #6: throttle — не чаще одного раза за кадр (16 мс), иначе BLoC
     // получает сотни событий в секунду и провоцирует подтормаживания.
     final now = DateTime.now();
@@ -553,6 +583,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
     _lastEraseTime = now;
 
+    final state = context.read<DrawBloc>().state;
     final List<DrawAction> updatedHistory = List<DrawAction>.from(state.history);
     bool historyChanged = false;
 
@@ -564,9 +595,17 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       final double effectiveRadius = eraserRadius / (avgScale <= 0 ? 1.0 : avgScale);
 
       if (action is StrokeAction) {
+        // Быстрая проверка пересечения с bounding box штриха
+        final bounds = CanvasPainter.getOriginalActionBounds(action);
+        final threshold = effectiveRadius + (action.strokeWidth / 2);
+        final expandedRect = bounds.inflate(threshold);
+        if (!expandedRect.contains(localObjPos)) {
+          continue;
+        }
+
         // Проверяем, близко ли ластик к линии
         final dist = _getDistanceToAction(localObjPos, action);
-        if (dist < effectiveRadius + (action.strokeWidth / 2)) {
+        if (dist < threshold) {
           // Разбиваем линию на непрерывные сегменты, исключая стёртые точки
           final List<List<Offset>> segments = [];
           List<Offset> currentSegment = [];
@@ -597,7 +636,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               updatedHistory.insert(
                 insertIndex,
                 StrokeAction(
-                  id: '${action.id}_${segmentPoints.hashCode}',
+                  id: _generateId(), // Fix #20: стабильный уникальный ID вместо хеша
                   color: action.color,
                   strokeWidth: action.strokeWidth,
                   points: segmentPoints,
@@ -629,7 +668,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
   }
 
-  void _onPointerDown(PointerDownEvent event, DrawState state) {
+  void _onPointerDown(PointerDownEvent event) {
+    final state = context.read<DrawBloc>().state;
     // Palm Rejection: Если рисуем стилусом, игнорируем любые касания пальцами (touch)
     if (event.kind == ui.PointerDeviceKind.stylus) {
       _isStylusActive = true;
@@ -668,9 +708,19 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (selectedAction != null) {
         final bounds = CanvasPainter.getActionBounds(selectedAction);
         if (bounds != Rect.zero) {
-          final screenLeft = bounds.left * _scale + _offset.dx;
-          final screenTop = bounds.top * _scale + _offset.dy;
-          final screenRight = bounds.right * _scale + _offset.dx;
+          final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
+          final baseSize = bgImage != null
+              ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
+              : const Size(800.0, 600.0);
+          final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+          final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
+          final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
+          final double drawScaleX = drawRect.width / baseSize.width;
+          final double drawScaleY = drawRect.height / baseSize.height;
+
+          final screenLeft = (bounds.left * drawScaleX + drawRect.left) * _scale + _offset.dx;
+          final screenTop = (bounds.top * drawScaleY + drawRect.top) * _scale + _offset.dy;
+          final screenRight = (bounds.right * drawScaleX + drawRect.left) * _scale + _offset.dx;
           final buttonY = (screenTop - 44.0).clamp(4.0, double.infinity);
           final buttonX = (screenLeft + screenRight) / 2 - 20;
           final buttonCenter = Offset(buttonX + 20, buttonY + 20);
@@ -692,7 +742,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
         if (selectedAction != null) {
           final bounds = CanvasPainter.getActionBounds(selectedAction);
-          final threshold = 15.0; // зона чувствительности клика по маркеру
+          final threshold = 30.0; // Fix #10: увеличенная зона чувствительности клика по маркеру
 
           final corners = {
             'topLeft': bounds.topLeft,
@@ -767,7 +817,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         _eraserCursorPosition = event.localPosition;
         _currentPoints = [localPosition];
       });
-      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2, state);
+      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2);
       return;
     }
 
@@ -852,12 +902,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     });
   }
 
-  void _onPointerMove(PointerMoveEvent event, DrawState state) {
+  void _onPointerMove(PointerMoveEvent event) {
     if (event.kind == ui.PointerDeviceKind.touch && _isStylusActive) {
       return; // Игнорируем касание ладонью при активном стилусе
     }
     if (_isZooming) return;
 
+    final state = context.read<DrawBloc>().state;
     final localPosition = _screenToCanvas(event.localPosition);
 
     // Ластик: отслеживаем точки и позицию курсора
@@ -866,7 +917,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         _eraserCursorPosition = event.localPosition;
         _currentPoints.add(localPosition);
       });
-      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2, state);
+      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2);
       return;
     }
 
@@ -949,7 +1000,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     });
   }
 
-  void _onPointerUp(PointerUpEvent event, DrawState state) {
+  void _onPointerUp(PointerUpEvent event) {
     _activePointers.remove(event.pointer);
     if (_activePointers.length < 2) {
       _isZooming = false;
@@ -966,6 +1017,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
 
     if (_isZooming) return;
+
+    final state = context.read<DrawBloc>().state;
 
     // Ластик: обрабатываем отдельно
     if (state.currentTool == ToolType.eraser) {
@@ -1000,7 +1053,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (_activeAction is TextAction) {
       final drawBloc = context.read<DrawBloc>();
       _showTextDialog(context).then((text) {
-        if (text != null && text.isNotEmpty) {
+        if (text != null) {
           final oldTextAction = _activeAction as TextAction;
           final finalAction = TextAction(
             id: oldTextAction.id,
@@ -1034,7 +1087,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
   }
 
-  // Диалог ввода текста для стрелки
+  // Диалог ввода текста для стрелки / измерения расстояния
   Future<String?> _showTextDialog(BuildContext context) async {
     String text = '';
     return showDialog<String>(
@@ -1042,19 +1095,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Добавить примечание к стрелке'),
+          title: const Text('Измерение расстояния'),
           content: TextField(
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'Введите текст патологии...'),
+            decoration: const InputDecoration(
+              hintText: 'Введите расстояние (например, 15 мм) или примечание...',
+            ),
             onChanged: (value) => text = value,
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(''),
+              onPressed: () => Navigator.of(context).pop(null), // Нажата Отмена
               child: const Text('Отмена'),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(text),
+              onPressed: () => Navigator.of(context).pop(text), // Нажато Добавить (может быть пустым)
               child: const Text('Добавить'),
             ),
           ],

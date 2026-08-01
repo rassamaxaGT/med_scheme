@@ -21,24 +21,52 @@ class CanvasPainter extends CustomPainter {
   });
 
 
+  static Rect getDrawRect(Size containerSize, Size baseSize) {
+    final double containerRatio = containerSize.width / containerSize.height;
+    final double baseRatio = baseSize.width / baseSize.height;
+    
+    double drawWidth, drawHeight;
+    if (containerRatio > baseRatio) {
+      drawHeight = containerSize.height;
+      drawWidth = drawHeight * baseRatio;
+    } else {
+      drawWidth = containerSize.width;
+      drawHeight = drawWidth / baseRatio;
+    }
+    
+    final double left = (containerSize.width - drawWidth) / 2;
+    final double top = (containerSize.height - drawHeight) / 2;
+    return Rect.fromLTWH(left, top, drawWidth, drawHeight);
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
+    final bgSize = backgroundImage != null
+        ? Size(backgroundImage!.width.toDouble(), backgroundImage!.height.toDouble())
+        : const Size(800.0, 600.0);
+    final drawRect = getDrawRect(size, bgSize);
+
     // 1. Отрисовка фонового изображения схемы
     if (backgroundImage != null) {
       paintImage(
         canvas: canvas,
-        rect: Rect.fromLTWH(0, 0, size.width, size.height),
+        rect: drawRect,
         image: backgroundImage!,
-        fit: BoxFit.contain,
+        fit: BoxFit.fill,
       );
     } else {
       // Если фона нет, рисуем белый холст
       final bgPaint = Paint()..color = Colors.white;
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+      canvas.drawRect(drawRect, bgPaint);
     }
 
     // 2. Отрисовка слоя рисования (с поддержкой прозрачности/ластика)
-    canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
+    canvas.save();
+    canvas.clipRect(drawRect);
+    canvas.translate(drawRect.left, drawRect.top);
+    canvas.scale(drawRect.width / bgSize.width, drawRect.height / bgSize.height);
+
+    canvas.saveLayer(Rect.fromLTWH(0, 0, bgSize.width, bgSize.height), Paint());
 
     // Рисуем историю действий (пропуская тот, который перемещается в данный момент)
     for (final action in history) {
@@ -69,7 +97,8 @@ class CanvasPainter extends CustomPainter {
       }
     }
 
-    canvas.restore();
+    canvas.restore(); // for saveLayer
+    canvas.restore(); // for clipping and translating
 
     if (patientId != null && patientId!.isNotEmpty) {
       final textPainter = TextPainter(
@@ -146,7 +175,7 @@ class CanvasPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
-    final double handleSize = 6.0;
+    final double handleSize = 10.0;
     final corners = [
       bounds.topLeft,
       bounds.topRight,
@@ -155,9 +184,8 @@ class CanvasPainter extends CustomPainter {
     ];
 
     for (final corner in corners) {
-      final rect = Rect.fromCenter(center: corner, width: handleSize, height: handleSize);
-      canvas.drawRect(rect, handlePaint);
-      canvas.drawRect(rect, handleBorderPaint);
+      canvas.drawCircle(corner, handleSize / 2, handlePaint);
+      canvas.drawCircle(corner, handleSize / 2, handleBorderPaint);
     }
   }
 
@@ -325,7 +353,8 @@ class CanvasPainter extends CustomPainter {
       // Соединяем точки паутиной
       for (int i = 0; i < stroke.points.length; i += 4) {
         final currentPoint = stroke.points[i];
-        for (int j = i + 8; j < stroke.points.length; j += 8) {
+        final int limit = math.min(stroke.points.length, i + 48);
+        for (int j = i + 8; j < limit; j += 8) {
           final targetPoint = stroke.points[j];
           final distance = (currentPoint - targetPoint).distance;
           if (distance > 10.0 && distance < 60.0) {
@@ -616,7 +645,8 @@ class CanvasPainter extends CustomPainter {
         oldDelegate.activeAction != activeAction ||
         oldDelegate.backgroundImage != backgroundImage ||
         oldDelegate.stampImages != stampImages ||
-        oldDelegate.selectedActionId != selectedActionId;
+        oldDelegate.selectedActionId != selectedActionId ||
+        oldDelegate.patientId != patientId;
   }
 }
 

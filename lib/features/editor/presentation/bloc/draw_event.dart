@@ -84,3 +84,10 @@ class SaveUndoStateEvent extends DrawEvent {
   SaveUndoStateEvent(this.undoState);
 }
 
+class SetFullStateEvent extends DrawEvent {
+  final List<DrawAction> history;
+  final String patientId;
+  final String? backgroundPath;
+  SetFullStateEvent({required this.history, required this.patientId, this.backgroundPath});
+}
+

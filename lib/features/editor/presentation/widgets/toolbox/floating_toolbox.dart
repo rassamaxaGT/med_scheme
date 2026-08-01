@@ -156,6 +156,7 @@ class FloatingToolbox extends StatelessWidget {
                       label: 'Инфильтрат',
                       tooltip: 'Инфильтрат (волнистый эллипс)',
                       icon: Icons.blur_linear,
+                      customColor: const Color(0xFFD32F2F), // Red
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -164,6 +165,7 @@ class FloatingToolbox extends StatelessWidget {
                       label: 'Спайки',
                       tooltip: 'Спайки (паутина)',
                       icon: Icons.grain,
+                      customColor: const Color(0xFF388E3C), // Green
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -174,14 +176,13 @@ class FloatingToolbox extends StatelessWidget {
                       icon: Icons.linear_scale,
                       isVertical: isVertical,
                     ),
-
                     _buildToolButton(
                       context,
                       tool: ToolType.endometrioma,
                       label: 'Эндометриома',
                       tooltip: 'Эндометриома (коричневый круг)',
                       icon: Icons.circle,
-                      customColor: const Color(0xFF5C4033),
+                      customColor: const Color(0xFF5C4033), // Brown
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -190,7 +191,7 @@ class FloatingToolbox extends StatelessWidget {
                       label: 'Миома FIGO',
                       tooltip: 'Миома по классификации FIGO',
                       icon: Icons.circle_outlined,
-                      customColor: const Color(0xFFFF69B4),
+                      customColor: const Color(0xFFFF69B4), // Pink/Fuchsia
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -199,6 +200,7 @@ class FloatingToolbox extends StatelessWidget {
                       label: 'ВМС',
                       tooltip: 'ВМС (спираль)',
                       icon: Icons.webhook,
+                      customColor: const Color(0xFF1976D2), // Blue/Cyan
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -207,6 +209,7 @@ class FloatingToolbox extends StatelessWidget {
                       label: 'Очаг',
                       tooltip: 'Очаг эндометриоза',
                       icon: Icons.bubble_chart,
+                      customColor: const Color(0xFFFFC107), // Yellow/Amber
                       isVertical: isVertical,
                     ),
                     _buildToolButton(
@@ -352,14 +355,19 @@ class FloatingToolbox extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: isSelected ? primaryColor : Colors.transparent,
+                    color: isSelected
+                        ? (customColor ?? primaryColor).withValues(alpha: 0.2)
+                        : Colors.transparent,
                     shape: BoxShape.circle,
+                    border: isSelected
+                        ? Border.all(color: customColor ?? primaryColor, width: 2.0)
+                        : null,
                   ),
                   child: Icon(
                     icon,
                     size: 18,
                     color: isSelected
-                        ? Colors.white
+                        ? (customColor ?? Colors.white)
                         : (customColor ?? Colors.white.withValues(alpha: 0.8)),
                   ),
                 ),
@@ -782,10 +790,11 @@ class SettingsBubble extends StatelessWidget {
       thumbColor: Colors.white,
     );
 
+    final maxStrokeWidth = currentTool == ToolType.eraser ? 80.0 : 20.0;
     final slider = Slider(
       min: 1.0,
-      max: 20.0,
-      value: currentStrokeWidth,
+      max: maxStrokeWidth,
+      value: currentStrokeWidth.clamp(1.0, maxStrokeWidth),
       onChanged: onThicknessChanged,
     );
 

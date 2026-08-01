@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/draw_action.dart';
 import 'draw_event.dart';
@@ -94,7 +95,11 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
     });
 
     on<SelectToolEvent>((event, emit) {
-      emit(state.copyWith(currentTool: event.tool));
+      final defaultColor = _getColorForTool(event.tool, state.currentFigoType);
+      emit(state.copyWith(
+        currentTool: event.tool,
+        currentColor: defaultColor ?? state.currentColor,
+      ));
     });
 
     on<ChangeColorEvent>((event, emit) {
@@ -135,7 +140,11 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
     });
 
     on<ChangeFigoTypeEvent>((event, emit) {
-      emit(state.copyWith(currentFigoType: event.figoType));
+      final defaultColor = _getColorForTool(state.currentTool, event.figoType);
+      emit(state.copyWith(
+        currentFigoType: event.figoType,
+        currentColor: defaultColor ?? state.currentColor,
+      ));
     });
 
     on<ToggleLineDashedEvent>((event, emit) {
@@ -176,5 +185,46 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         redoStack: [],
       ));
     });
+
+    // ── Установка полного состояния (автосохранение) ──────────────────────
+    on<SetFullStateEvent>((event, emit) {
+      emit(state.copyWith(
+        history: event.history,
+        patientId: event.patientId,
+        backgroundPath: event.backgroundPath,
+        clearBackground: event.backgroundPath == null,
+        undoStack: [],
+        redoStack: [],
+      ));
+    });
+  }
+
+  Color? _getColorForTool(ToolType tool, String figoType) {
+    switch (tool) {
+      case ToolType.infiltrate:
+        return const Color(0xFFD32F2F); // Red
+      case ToolType.adhesions:
+        return const Color(0xFF388E3C); // Green
+      case ToolType.endometrioma:
+        return const Color(0xFF5C4033); // Brown
+      case ToolType.myoma:
+        if (figoType == '0' || figoType == '1' || figoType == '2') {
+          return const Color(0xFFE91E63); // Pink
+        } else if (figoType == '3' || figoType == '4') {
+          return const Color(0xFF1976D2); // Blue
+        } else if (figoType == '5' || figoType == '6' || figoType == '7') {
+          return const Color(0xFF388E3C); // Green
+        } else if (figoType == '8') {
+          return const Color(0xFF757575); // Grey
+        } else {
+          return const Color(0xFF9C27B0); // Purple/Hybrid
+        }
+      case ToolType.foci:
+        return const Color(0xFFFFC107); // Yellow/Amber
+      case ToolType.iud:
+        return const Color(0xFF1976D2); // Blue
+      default:
+        return null;
+    }
   }
 }
