@@ -1,4 +1,5 @@
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
 
@@ -6,12 +7,11 @@ abstract class ProjectRepository {
   /// Запрашивает у пользователя папку сохранения проектов (для Android SAF)
   Future<String?> requestProjectDirectory();
 
-  /// Сохраняет проект в ZIP-контейнера (.meddraw)
+  /// Сохраняет проект в ZIP-контейнер (.meddraw)
   Future<void> saveProject({
     required String directoryPath,
     required String projectName,
-    required List<DrawAction> actions,
-    required String? backgroundPath,
+    required List<PageData> pages,
     required String? patientId,
   });
 
@@ -42,4 +42,3 @@ abstract class ProjectRepository {
   /// Возвращает локально сохраненный путь к директории
   Future<String?> getSavedDirectoryPath();
 }
-

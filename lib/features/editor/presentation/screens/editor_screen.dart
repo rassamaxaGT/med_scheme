@@ -17,7 +17,6 @@ import '../bloc/draw_bloc.dart';
 import '../bloc/draw_event.dart';
 import '../bloc/draw_state.dart';
 import '../bloc/project_bloc.dart';
-import '../widgets/canvas/canvas_painter.dart';
 import '../widgets/canvas/canvas_widget.dart';
 import '../widgets/toolbox/floating_toolbox.dart';
 
@@ -33,7 +32,7 @@ class EditorScreen extends StatefulWidget {
           title: const Text('Выбор рабочей папки'),
           content: const Text(
             'Для сохранения и загрузки ваших проектов, а также экспорта размеченных схем, необходимо выбрать рабочую папку на устройстве.\n\n'
-            'В следующем системном окне выберите существующую папку или создайте новую (например, "МедРисунки") и подтвердите доступ кнопкой "Использовать эту папку".'
+            'В следующем системном окне выберите существующую папку или создайте новую (например, "МедРисунки") и подтвердите доступ кнопкой "Использовать эту папку".',
           ),
           actions: [
             TextButton(
@@ -59,13 +58,13 @@ class EditorScreen extends StatefulWidget {
 
 class _EditorScreenState extends State<EditorScreen> {
   final _patientIdController = TextEditingController();
-  Offset? _toolboxOffset;
+  // Используем ValueNotifier для позиции тулбара — избегаем перестройки всего дерева при drag
+  final _toolboxPositionNotifier = ValueNotifier<Offset?>(null);
+  final _toolboxOrientationNotifier = ValueNotifier<ToolboxOrientation>(ToolboxOrientation.horizontal);
   Offset? _dragPosition;
 
   List<String>? _savedHistoryIds;
   String? _lastSavedBackgroundPath;
-
-  ToolboxOrientation _toolboxOrientation = ToolboxOrientation.horizontal;
 
   // PC-интерфейс: нотификаторы масштаба, выделения и сброса зума
   final _scaleNotifier = ValueNotifier<double>(1.0);
@@ -97,7 +96,7 @@ class _EditorScreenState extends State<EditorScreen> {
       final packageInfo = await PackageInfo.fromPlatform();
       if (mounted) {
         setState(() {
-          _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+          _appVersion = packageInfo.version;
         });
       }
     } catch (e) {
@@ -112,14 +111,11 @@ class _EditorScreenState extends State<EditorScreen> {
       final dy = prefs.getDouble('toolbox_y');
       final orientationIndex = prefs.getInt('toolbox_orientation');
       if (dx != null && dy != null) {
-        setState(() {
-          _toolboxOffset = Offset(dx, dy);
-        });
+        _toolboxPositionNotifier.value = Offset(dx, dy);
       }
       if (orientationIndex != null) {
-        setState(() {
-          _toolboxOrientation = ToolboxOrientation.values[orientationIndex];
-        });
+        _toolboxOrientationNotifier.value =
+            ToolboxOrientation.values[orientationIndex];
       }
     } catch (e) {
       debugPrint('Ошибка загрузки позиции тулбара: $e');
@@ -127,12 +123,16 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _saveToolboxPosition() async {
-    if (_toolboxOffset == null) return;
+    final pos = _toolboxPositionNotifier.value;
+    if (pos == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble('toolbox_x', _toolboxOffset!.dx);
-      await prefs.setDouble('toolbox_y', _toolboxOffset!.dy);
-      await prefs.setInt('toolbox_orientation', _toolboxOrientation.index);
+      await prefs.setDouble('toolbox_x', pos.dx);
+      await prefs.setDouble('toolbox_y', pos.dy);
+      await prefs.setInt(
+        'toolbox_orientation',
+        _toolboxOrientationNotifier.value.index,
+      );
     } catch (e) {
       debugPrint('Ошибка сохранения позиции тулбара: $e');
     }
@@ -144,6 +144,8 @@ class _EditorScreenState extends State<EditorScreen> {
     _scaleNotifier.dispose();
     _selectedActionIdNotifier.dispose();
     _resetZoomNotifier.dispose();
+    _toolboxPositionNotifier.dispose();
+    _toolboxOrientationNotifier.dispose();
     _autoSaveTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     super.dispose();
@@ -151,6 +153,10 @@ class _EditorScreenState extends State<EditorScreen> {
 
   bool _hasUnsavedChanges() {
     final drawState = context.read<DrawBloc>().state;
+    if (_savedHistoryIds == null && _lastSavedBackgroundPath == null) {
+      // Инициализационное состояние: новый проект без действий
+      return drawState.history.isNotEmpty;
+    }
     if (drawState.backgroundPath != _lastSavedBackgroundPath) return true;
     final currentIds = drawState.history.map((a) => a.id).toList();
     if (_savedHistoryIds == null) return currentIds.isNotEmpty;
@@ -167,7 +173,9 @@ class _EditorScreenState extends State<EditorScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Несохраненные изменения'),
-          content: const Text('У вас есть несохраненные изменения. Вы уверены, что хотите выйти? Все несохраненные изменения будут утеряны.'),
+          content: const Text(
+            'У вас есть несохраненные изменения. Вы уверены, что хотите выйти? Все несохраненные изменения будут утеряны.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -214,17 +222,22 @@ class _EditorScreenState extends State<EditorScreen> {
             builder: (context, projectState) {
               final projectBloc = context.read<ProjectBloc>();
               final filePath = projectBloc.currentProjectFilePath;
-              final projectName = filePath != null 
-                  ? _getProjectNameFromPath(filePath) 
+              final projectName = filePath != null
+                  ? _getProjectNameFromPath(filePath)
                   : 'Новый проект';
-              
+
               return BlocBuilder<DrawBloc, DrawState>(
                 builder: (context, drawState) {
                   final isModified = _hasUnsavedChanges();
 
                   return Text(
-                    isModified ? '$projectName • Изменено' : '$projectName • Сохранено',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    isModified
+                        ? '$projectName • Изменено'
+                        : '$projectName • Сохранено',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   );
                 },
               );
@@ -243,16 +256,49 @@ class _EditorScreenState extends State<EditorScreen> {
           actions: [
             BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
+                final isSelected = drawState.currentTool == ToolType.move;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Tooltip(
+                    message: 'Движение (выбор и перемещение)',
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFF0F4C81)
+                            : Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.open_with, size: 18),
+                        color: isSelected ? Colors.white : Colors.white70,
+                        onPressed: () {
+                          context.read<DrawBloc>().add(
+                            SelectToolEvent(ToolType.move),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            BlocBuilder<DrawBloc, DrawState>(
+              builder: (context, drawState) {
                 return GestureDetector(
                   onTap: () => _showPatientIdDialog(context),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: drawState.patientId.isNotEmpty ? const Color(0xFF0F4C81) : Colors.white24,
+                        color: drawState.patientId.isNotEmpty
+                            ? const Color(0xFF0F4C81)
+                            : Colors.white24,
                         width: 1.0,
                       ),
                     ),
@@ -262,15 +308,21 @@ class _EditorScreenState extends State<EditorScreen> {
                         Icon(
                           Icons.person,
                           size: 14,
-                          color: drawState.patientId.isNotEmpty ? const Color(0xFF1976D2) : Colors.white54,
+                          color: drawState.patientId.isNotEmpty
+                              ? const Color(0xFF1976D2)
+                              : Colors.white54,
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          drawState.patientId.isNotEmpty ? drawState.patientId : 'Указать пациента',
+                          drawState.patientId.isNotEmpty
+                              ? drawState.patientId
+                              : 'Указать пациента',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: drawState.patientId.isNotEmpty ? Colors.white : Colors.white54,
+                            color: drawState.patientId.isNotEmpty
+                                ? Colors.white
+                                : Colors.white54,
                           ),
                         ),
                       ],
@@ -281,7 +333,10 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             PopupMenuButton<String>(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F4C81), // Classic Blue
@@ -367,7 +422,11 @@ class _EditorScreenState extends State<EditorScreen> {
                       children: [
                         const Icon(Icons.image, size: 18),
                         const SizedBox(width: 8),
-                        Text(hasBg ? 'Сменить фоновое изображение' : 'Загрузить фоновое изображение'),
+                        Text(
+                          hasBg
+                              ? 'Сменить фоновое изображение'
+                              : 'Загрузить фоновое изображение',
+                        ),
                       ],
                     ),
                   ),
@@ -376,9 +435,16 @@ class _EditorScreenState extends State<EditorScreen> {
                       value: 'delete_bg',
                       child: Row(
                         children: [
-                          Icon(Icons.no_photography, size: 18, color: Colors.redAccent),
+                          Icon(
+                            Icons.no_photography,
+                            size: 18,
+                            color: Colors.redAccent,
+                          ),
                           SizedBox(width: 8),
-                          Text('Удалить фоновое изображение', style: TextStyle(color: Colors.redAccent)),
+                          Text(
+                            'Удалить фоновое изображение',
+                            style: TextStyle(color: Colors.redAccent),
+                          ),
                         ],
                       ),
                     ),
@@ -400,7 +466,10 @@ class _EditorScreenState extends State<EditorScreen> {
               builder: (context, drawState) {
                 return Container(
                   margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(20),
@@ -425,7 +494,9 @@ class _EditorScreenState extends State<EditorScreen> {
                       IconButton(
                         icon: const Icon(Icons.delete_sweep, size: 20),
                         tooltip: 'Очистить холст',
-                        color: drawState.history.isEmpty ? null : Colors.redAccent.withValues(alpha: 0.8),
+                        color: drawState.history.isEmpty
+                            ? null
+                            : Colors.redAccent.withValues(alpha: 0.8),
                         onPressed: drawState.history.isEmpty
                             ? null
                             : () async {
@@ -439,7 +510,8 @@ class _EditorScreenState extends State<EditorScreen> {
                                     ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
                                         child: const Text('Отмена'),
                                       ),
                                       ElevatedButton(
@@ -447,14 +519,17 @@ class _EditorScreenState extends State<EditorScreen> {
                                           backgroundColor: Colors.redAccent,
                                           foregroundColor: Colors.white,
                                         ),
-                                        onPressed: () => Navigator.pop(ctx, true),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
                                         child: const Text('Очистить'),
                                       ),
                                     ],
                                   ),
                                 );
                                 if (confirmed == true && context.mounted) {
-                                  context.read<DrawBloc>().add(ClearCanvasEvent());
+                                  context.read<DrawBloc>().add(
+                                    ClearCanvasEvent(),
+                                  );
                                 }
                               },
                       ),
@@ -469,7 +544,10 @@ class _EditorScreenState extends State<EditorScreen> {
               builder: (context, scale, _) {
                 return Container(
                   margin: const EdgeInsets.only(right: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
@@ -547,309 +625,371 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ],
         ),
-        body: BlocListener<ProjectBloc, ProjectState>(
-          listener: (context, state) {
-            if (state is ProjectLoading) {
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  const SnackBar(
-                    content: Row(
-                      children: [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+        body: SafeArea(
+          child: BlocListener<ProjectBloc, ProjectState>(
+            listener: (context, state) {
+              if (state is ProjectLoading) {
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    const SnackBar(
+                      content: Row(
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 14),
-                        Text('Выполняется операция…'),
-                      ],
+                          SizedBox(width: 14),
+                          Text('Выполняется операция…'),
+                        ],
+                      ),
+                      duration: Duration(seconds: 30),
                     ),
-                    duration: Duration(seconds: 30),
+                  );
+              } else if (state is ProjectSaved) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                final drawState = context.read<DrawBloc>().state;
+                setState(() {
+                  _savedHistoryIds = drawState.history
+                      .map((a) => a.id)
+                      .toList();
+                  _lastSavedBackgroundPath = drawState.backgroundPath;
+                });
+                _clearDraft(); // Очищаем черновик, так как проект успешно сохранен
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Проект успешно сохранён!')),
+                );
+              } else if (state is ProjectExported) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Схема экспортирована: ${state.outputPath}'),
                   ),
                 );
-            } else if (state is ProjectSaved) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              final drawState = context.read<DrawBloc>().state;
-              setState(() {
-                _savedHistoryIds = drawState.history.map((a) => a.id).toList();
-                _lastSavedBackgroundPath = drawState.backgroundPath;
-              });
-              _clearDraft(); // Очищаем черновик, так как проект успешно сохранен
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Проект успешно сохранён!')),
-              );
-            } else if (state is ProjectExported) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Схема экспортирована: ${state.outputPath}'),
-                ),
-              );
-            } else if (state is ProjectLoaded) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              context.read<DrawBloc>().add(SetHistoryEvent(state.actions));
-              context.read<DrawBloc>().add(SetBackgroundEvent(state.backgroundPath));
-              final pId = state.patientId ?? '';
-              _patientIdController.text = pId;
-              context.read<DrawBloc>().add(SetPatientIdEvent(pId));
-              setState(() {
-                _savedHistoryIds = state.actions.map((a) => a.id).toList();
-                _lastSavedBackgroundPath = state.backgroundPath;
-              });
-              _clearDraft(); // Очищаем черновик, так как загружен новый проект
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Проект успешно загружен!')),
-              );
-            } else if (state is ProjectError) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(state.message),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
-            }
-          },
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: CanvasWidget(
-                  scaleNotifier: _scaleNotifier,
-                  selectedActionIdNotifier: _selectedActionIdNotifier,
-                  resetZoomNotifier: _resetZoomNotifier,
-                ),
-              ),
-              
-              // Единый оптимизированный BlocBuilder для панели настроек и тулбара
-              BlocBuilder<DrawBloc, DrawState>(
-                builder: (context, drawState) {
-                  final mediaQuery = MediaQuery.sizeOf(context);
-                  final screenWidth = mediaQuery.width;
-                  final screenHeight = mediaQuery.height;
+              } else if (state is ProjectLoaded) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                final pId = state.patientId ?? '';
+                _patientIdController.text = pId;
+                context.read<DrawBloc>().add(
+                  SetFullStateEvent(
+                    pages: state.projectData.pages,
+                    patientId: pId,
+                  ),
+                );
+                setState(() {
+                  _savedHistoryIds = state.actions.map((a) => a.id).toList();
+                  _lastSavedBackgroundPath = state.backgroundPath;
+                });
+                _clearDraft(); // Очищаем черновик, так как загружен новый проект
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Проект успешно загружен!')),
+                );
+              } else if (state is ProjectError) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            },
+            child: Column(
+              children: [
+                // const _PageTabBar(), // Отключено по ТЗ (убираем двуступенчатую иерархию листов)
+                const _SchemeSelector(),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final availableWidth = constraints.maxWidth;
+                      final availableHeight = constraints.maxHeight;
 
-                  final tool = drawState.currentTool;
+                      return Stack(
+                        children: [
+                          Positioned.fill(
+                            child: CanvasWidget(
+                              scaleNotifier: _scaleNotifier,
+                              selectedActionIdNotifier:
+                                  _selectedActionIdNotifier,
+                              resetZoomNotifier: _resetZoomNotifier,
+                            ),
+                          ),
 
-                  // Размеры панели
-                  final double statusBarHeight = MediaQuery.paddingOf(context).top;
-                  final double horizontalWidth = screenWidth > 700 ? 700.0 : screenWidth - 32;
-                  final double verticalWidth = 76.0;
-                  final bool hasSettings = tool != ToolType.move;
-                  final double horizontalHeight = hasSettings ? 110.0 : 60.0;
-                  final double verticalHeight = (screenHeight - kToolbarHeight - statusBarHeight - 32.0).clamp(100.0, 520.0);
+                          // Единый оптимизированный BlocBuilder для панели настроек и тулбара
+                          BlocBuilder<DrawBloc, DrawState>(
+                            buildWhen: (prev, next) =>
+                                prev.currentTool != next.currentTool ||
+                                prev.currentColor != next.currentColor ||
+                                prev.currentStrokeWidth != next.currentStrokeWidth ||
+                                prev.currentLineDashed != next.currentLineDashed ||
+                                prev.customStamps != next.customStamps,
+                            builder: (context, drawState) {
+                              final screenWidth = availableWidth;
+                              final screenHeight = availableHeight;
 
-                  final double initialX = (screenWidth - horizontalWidth) / 2;
-                  final double initialY = screenHeight - horizontalHeight - 32;
+                              final tool = drawState.currentTool;
 
-                  final currentOffset = _toolboxOffset ?? Offset(initialX, initialY);
-                  final bubbleWidth = horizontalWidth.clamp(200.0, 340.0);
+                              // Размеры панели
+                              final double horizontalWidth = screenWidth > 700
+                                  ? 700.0
+                                  : screenWidth - 32;
+                              final double verticalWidth = 76.0;
+                              final bool hasSettings = tool != ToolType.move;
+                              final double horizontalHeight = hasSettings
+                                  ? 110.0
+                                  : 60.0;
+                              final double verticalHeight =
+                                  (screenHeight - 32.0).clamp(100.0, 520.0);
 
-                  // Вычисляем зажатые координаты для рендеринга и перетаскивания без мутации состояния
-                  Offset clampedOffset = currentOffset;
-                  if (_toolboxOffset != null) {
-                    final double currentWidth = (_toolboxOrientation == ToolboxOrientation.horizontal) ? horizontalWidth : verticalWidth;
-                    final double currentHeight = (_toolboxOrientation == ToolboxOrientation.horizontal) ? horizontalHeight : verticalHeight;
-                    
-                    final double minX = 16.0;
-                    final double maxX = _safeClamp(screenWidth - currentWidth - 16.0, minX, screenWidth);
-                    final double minY = kToolbarHeight + statusBarHeight + 16.0;
-                    final double maxY = _safeClamp(screenHeight - currentHeight - 16.0, minY, screenHeight);
-                    
-                    clampedOffset = Offset(
-                      _safeClamp(_toolboxOffset!.dx, minX, maxX),
-                      _safeClamp(_toolboxOffset!.dy, minY, maxY),
-                    );
-                  }
+                              final double initialX =
+                                  (screenWidth - horizontalWidth) / 2;
+                              final double initialY =
+                                  screenHeight - horizontalHeight - 16;
 
-                  void handleDragUpdate(Offset delta) {
-                    setState(() {
-                      _dragPosition = (_dragPosition ?? clampedOffset) + delta;
+                              Offset computeClampedOffset(Offset raw, ToolboxOrientation orientation) {
+                                final double currentWidth =
+                                    (orientation == ToolboxOrientation.horizontal)
+                                    ? horizontalWidth
+                                    : verticalWidth;
+                                final double currentHeight =
+                                    (orientation == ToolboxOrientation.horizontal)
+                                    ? horizontalHeight
+                                    : verticalHeight;
+                                final double minX = 16.0;
+                                final double maxX = _safeClamp(screenWidth - currentWidth - 16.0, minX, screenWidth);
+                                final double minY = 16.0;
+                                final double maxY = _safeClamp(screenHeight - currentHeight - 16.0, minY, screenHeight);
+                                return Offset(
+                                  _safeClamp(raw.dx, minX, maxX),
+                                  _safeClamp(raw.dy, minY, maxY),
+                                );
+                              }
 
-                      final targetX = _dragPosition!.dx;
-                      final targetY = _dragPosition!.dy;
+                              Offset resolveOffset() {
+                                final pos = _toolboxPositionNotifier.value;
+                                if (pos == null) return Offset(initialX, initialY);
+                                return computeClampedOffset(pos, _toolboxOrientationNotifier.value);
+                              }
 
-                      // Проверяем прилипание (snapping) к левой/правой границе экрана
-                      ToolboxOrientation orientation = ToolboxOrientation.horizontal;
-                      const double snapThreshold = 60.0;
+                              void handleDragUpdate(Offset delta) {
+                                final currentPos = resolveOffset();
+                                _dragPosition = (_dragPosition ?? currentPos) + delta;
 
-                      double newX = targetX;
-                      if (targetX < snapThreshold) {
-                        orientation = ToolboxOrientation.verticalLeft;
-                        newX = 16.0;
-                      } else if (targetX > screenWidth - verticalWidth - snapThreshold) {
-                        orientation = ToolboxOrientation.verticalRight;
-                        newX = screenWidth - verticalWidth - 16.0;
-                      }
+                                final targetX = _dragPosition!.dx;
+                                final targetY = _dragPosition!.dy;
 
-                      // Ограничиваем координаты
-                      final double currentWidth = (orientation == ToolboxOrientation.horizontal) ? horizontalWidth : verticalWidth;
-                      final double currentHeight = (orientation == ToolboxOrientation.horizontal) ? horizontalHeight : verticalHeight;
+                                // Проверяем прилипание (snapping) к левой/правой границе экрана
+                                ToolboxOrientation orientation = ToolboxOrientation.horizontal;
+                                const double snapThreshold = 60.0;
 
-                      final double minX = 16.0;
-                      final double maxX = _safeClamp(screenWidth - currentWidth - 16.0, minX, screenWidth);
-                      final double minY = kToolbarHeight + statusBarHeight + 16.0;
-                      final double maxY = _safeClamp(screenHeight - currentHeight - 16.0, minY, screenHeight);
+                                double newX = targetX;
+                                if (targetX < snapThreshold) {
+                                  orientation = ToolboxOrientation.verticalLeft;
+                                  newX = 16.0;
+                                } else if (targetX > screenWidth - verticalWidth - snapThreshold) {
+                                  orientation = ToolboxOrientation.verticalRight;
+                                  newX = screenWidth - verticalWidth - 16.0;
+                                }
 
-                      _toolboxOffset = Offset(
-                        _safeClamp(newX, minX, maxX),
-                        _safeClamp(targetY, minY, maxY),
-                      );
-                      _toolboxOrientation = orientation;
-                    });
-                  }
+                                final newPos = computeClampedOffset(
+                                  Offset(newX, targetY),
+                                  orientation,
+                                );
 
-                  void handleDragStart() {
-                    _dragPosition = clampedOffset;
-                  }
+                                // Обновляем нотификаторы — без setState, без ребилда дерева
+                                _toolboxPositionNotifier.value = newPos;
+                                _toolboxOrientationNotifier.value = orientation;
+                              }
 
-                  void handleDragEnd() {
-                    _dragPosition = null;
-                    _saveToolboxPosition(); // Сохраняем позицию при завершении перетягивания
-                  }
+                              void handleDragStart() {
+                                _dragPosition = resolveOffset();
+                              }
 
-                  // Виджет настроек (Settings Bubble)
-                  Widget? settingsBubble;
-                  final bool showColor = tool == ToolType.pencil ||
-                      tool == ToolType.adhesions ||
-                      tool == ToolType.fibrosis ||
-                      tool == ToolType.arrow ||
-                      tool == ToolType.iud ||
-                      tool == ToolType.foci;
+                              void handleDragEnd() {
+                                _dragPosition = null;
+                                _saveToolboxPosition(); // Сохраняем позицию при завершении перетягивания
+                              }
 
-                  final bool showThickness = tool == ToolType.pencil ||
-                      tool == ToolType.adhesions ||
-                      tool == ToolType.fibrosis ||
-                      tool == ToolType.arrow ||
-                      tool == ToolType.eraser;
+                              // Виджет настроек (Settings Bubble)
+                              final bubbleWidth = horizontalWidth.clamp(200.0, 340.0);
+                              final bool showColor =
+                                  tool == ToolType.pencil ||
+                                  tool == ToolType.adhesions ||
+                                  tool == ToolType.fibrosis ||
+                                  tool == ToolType.arrow ||
+                                  tool == ToolType.iud ||
+                                  tool == ToolType.foci;
 
-                  final bool showCustomStamps = tool == ToolType.customStamp;
-                  final bool showFigo = tool == ToolType.myoma;
+                              final bool showThickness =
+                                  tool == ToolType.pencil ||
+                                  tool == ToolType.adhesions ||
+                                  tool == ToolType.fibrosis ||
+                                  tool == ToolType.arrow ||
+                                  tool == ToolType.eraser;
 
-                  if (tool != ToolType.move && (showColor || showThickness || showCustomStamps || showFigo)) {
-                    settingsBubble = Container(
-                      constraints: BoxConstraints(
-                        maxWidth: (_toolboxOrientation == ToolboxOrientation.horizontal) ? bubbleWidth : verticalWidth,
-                      ),
-                      child: SettingsBubble(
-                        currentColor: drawState.currentColor,
-                        currentStrokeWidth: drawState.currentStrokeWidth,
-                        currentTool: drawState.currentTool,
-                        onColorChanged: (color) {
-                          context.read<DrawBloc>().add(ChangeColorEvent(color));
-                        },
-                        onThicknessChanged: (width) {
-                          context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
-                        },
-                        orientation: _toolboxOrientation,
-                        currentFigoType: drawState.currentFigoType,
-                        onFigoTypeChanged: (type) {
-                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
-                        },
-                        currentLineDashed: drawState.currentLineDashed,
-                        onLineDashedChanged: (dashed) {
-                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
-                        },
-                      ),
-                    );
-                  }
+                              final bool showCustomStamps = tool == ToolType.customStamp;
+                              final bool showFigo = tool == ToolType.myoma;
 
-                  // Позиционируем настройки и тулбар в одном Stack
-                  Positioned? positionedSettings;
-                  if (settingsBubble != null) {
-                    if (_toolboxOrientation == ToolboxOrientation.horizontal) {
-                      positionedSettings = Positioned(
-                        left: clampedOffset.dx + (horizontalWidth - bubbleWidth) / 2,
-                        top: clampedOffset.dy - 64.0, // Высота баббла настроек + отступ
-                        child: settingsBubble,
-                      );
-                    } else if (_toolboxOrientation == ToolboxOrientation.verticalLeft) {
-                      positionedSettings = Positioned(
-                        left: clampedOffset.dx + verticalWidth + 8.0,
-                        top: clampedOffset.dy,
-                        child: settingsBubble,
-                      );
-                    } else {
-                      positionedSettings = Positioned(
-                        left: clampedOffset.dx - verticalWidth - 8.0,
-                        top: clampedOffset.dy,
-                        child: settingsBubble,
-                      );
-                    }
-                  }
+                              Widget? settingsBubble;
+                              if (tool != ToolType.move &&
+                                  (showColor || showThickness || showCustomStamps || showFigo)) {
+                                settingsBubble = ValueListenableBuilder<ToolboxOrientation>(
+                                  valueListenable: _toolboxOrientationNotifier,
+                                  builder: (context, orientation, _) {
+                                    return Container(
+                                      constraints: BoxConstraints(
+                                        maxWidth: (orientation == ToolboxOrientation.horizontal)
+                                            ? bubbleWidth
+                                            : verticalWidth,
+                                      ),
+                                      child: SettingsBubble(
+                                        currentColor: drawState.currentColor,
+                                        currentStrokeWidth: drawState.currentStrokeWidth,
+                                        currentTool: drawState.currentTool,
+                                        onColorChanged: (color) {
+                                          context.read<DrawBloc>().add(ChangeColorEvent(color));
+                                        },
+                                        onThicknessChanged: (width) {
+                                          context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
+                                        },
+                                        orientation: orientation,
+                                        currentFigoType: drawState.currentFigoType,
+                                        onFigoTypeChanged: (type) {
+                                          // ignore: deprecated_member_use_from_same_package
+                                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
+                                        },
+                                        currentLineDashed: drawState.currentLineDashed,
+                                        onLineDashedChanged: (dashed) {
+                                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
+                                        },
+                                      ),
+                                    );
+                                  },
+                                );
+                              }
 
-                  final positionedToolbox = Positioned(
-                    left: clampedOffset.dx,
-                    top: clampedOffset.dy,
-                    child: FloatingToolbox(
-                      orientation: _toolboxOrientation,
-                      currentTool: drawState.currentTool,
-                      onToolSelected: (tool) async {
-                        if (tool == ToolType.customStamp && drawState.customStamps.isEmpty) {
-                          final result = await FilePicker.platform.pickFiles(
-                            type: FileType.custom,
-                            allowedExtensions: ['png'],
-                          );
-                          if (result != null && result.files.single.path != null) {
-                            if (context.mounted) {
-                              context.read<DrawBloc>().add(ImportCustomStampEvent(result.files.single.path!));
-                            }
-                          } else {
-                            if (context.mounted) {
-                              context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('PNG-штамп не выбран. Загрузите файл для использования инструмента.'),
-                                ),
+                              // Тулбар и баббл настроек — позиционируются через ValueListenableBuilder
+                              // чтобы drag не пересобирал BlocBuilder и CanvasWidget
+                              return ValueListenableBuilder2<Offset?, ToolboxOrientation>(
+                                first: _toolboxPositionNotifier,
+                                second: _toolboxOrientationNotifier,
+                                builder: (context, pos, orientation, _) {
+                                  final clampedOffset = pos == null
+                                      ? Offset(initialX, initialY)
+                                      : computeClampedOffset(pos, orientation);
+
+                                  Positioned? positionedSettings;
+                                  if (settingsBubble != null) {
+                                    if (orientation == ToolboxOrientation.horizontal) {
+                                      positionedSettings = Positioned(
+                                        left: clampedOffset.dx + (horizontalWidth - bubbleWidth) / 2,
+                                        top: clampedOffset.dy - 64.0,
+                                        child: settingsBubble,
+                                      );
+                                    } else if (orientation == ToolboxOrientation.verticalLeft) {
+                                      positionedSettings = Positioned(
+                                        left: clampedOffset.dx + verticalWidth + 8.0,
+                                        top: clampedOffset.dy,
+                                        child: settingsBubble,
+                                      );
+                                    } else {
+                                      positionedSettings = Positioned(
+                                        left: clampedOffset.dx - verticalWidth - 8.0,
+                                        top: clampedOffset.dy,
+                                        child: settingsBubble,
+                                      );
+                                    }
+                                  }
+
+                                  final positionedToolbox = Positioned(
+                                    left: clampedOffset.dx,
+                                    top: clampedOffset.dy,
+                                    child: FloatingToolbox(
+                                      orientation: orientation,
+                                      currentTool: drawState.currentTool,
+                                      width: horizontalWidth,
+                                      onToolSelected: (tool) async {
+                                        if (tool == ToolType.customStamp &&
+                                            drawState.customStamps.isEmpty) {
+                                          final result = await FilePicker.platform.pickFiles(
+                                            type: FileType.custom,
+                                            allowedExtensions: ['png'],
+                                          );
+                                          if (result != null && result.files.single.path != null) {
+                                            if (context.mounted) {
+                                              context.read<DrawBloc>().add(
+                                                ImportCustomStampEvent(result.files.single.path!),
+                                              );
+                                            }
+                                          } else {
+                                            if (context.mounted) {
+                                              context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('PNG-штамп не выбран. Загрузите файл для использования инструмента.'),
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        } else {
+                                          context.read<DrawBloc>().add(SelectToolEvent(tool));
+                                        }
+                                      },
+                                      onDragStart: handleDragStart,
+                                      onDragUpdate: handleDragUpdate,
+                                      onDragEnd: handleDragEnd,
+                                      maxHeight: verticalHeight,
+                                    ),
+                                  );
+
+                                  return Stack(
+                                    children: [
+                                      ?positionedSettings,
+                                      positionedToolbox,
+                                    ],
+                                  );
+                                },
                               );
-                            }
-                          }
-                        } else {
-                          context.read<DrawBloc>().add(SelectToolEvent(tool));
-                        }
-                      },
-                      onDragStart: handleDragStart,
-                      onDragUpdate: handleDragUpdate,
-                      onDragEnd: handleDragEnd,
-                      maxHeight: verticalHeight,
-                    ),
-                  );
-
-                  return Stack(
-                    children: [
-                      if (positionedSettings != null) positionedSettings,
-                      positionedToolbox,
-                    ],
-                  );
-                },
-              ),
-              if (_appVersion.isNotEmpty)
-                Positioned(
-                  bottom: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        width: 1.0,
-                      ),
-                    ),
-                    child: Text(
-                      'v$_appVersion',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                            },
+                          ),
+                          if (_appVersion.isNotEmpty)
+                            Positioned(
+                              bottom: 12,
+                              left: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Text(
+                                  'v$_appVersion',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -879,7 +1019,8 @@ class _EditorScreenState extends State<EditorScreen> {
             onPressed: () {
               final newId = controller.text;
               drawBloc.add(SetPatientIdEvent(newId));
-              _patientIdController.text = newId; // Синхронизируем локальный контроллер
+              _patientIdController.text =
+                  newId; // Синхронизируем локальный контроллер
               Navigator.pop(ctx);
             },
             child: const Text('Сохранить'),
@@ -893,14 +1034,16 @@ class _EditorScreenState extends State<EditorScreen> {
     final drawState = context.read<DrawBloc>().state;
     if (drawState.history.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('На холсте ничего не нарисовано для экспорта.')),
+        const SnackBar(
+          content: Text('На холсте ничего не нарисовано для экспорта.'),
+        ),
       );
       return;
     }
 
     final patientId = drawState.patientId;
-    final defaultFilename = patientId.isNotEmpty 
-        ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}' 
+    final defaultFilename = patientId.isNotEmpty
+        ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}'
         : 'экспорт_узи_${DateTime.now().millisecondsSinceEpoch}';
     final nameController = TextEditingController(text: defaultFilename);
 
@@ -922,13 +1065,13 @@ class _EditorScreenState extends State<EditorScreen> {
               onPressed: () {
                 Navigator.pop(dialogContext);
                 context.read<ProjectBloc>().add(
-                      ExportProjectEvent(
-                        projectName: nameController.text,
-                        actions: drawState.history,
-                        backgroundPath: drawState.backgroundPath,
-                        patientId: patientId,
-                      ),
-                    );
+                  ExportProjectEvent(
+                    projectName: nameController.text,
+                    actions: drawState.history,
+                    backgroundPath: drawState.backgroundPath,
+                    patientId: patientId,
+                  ),
+                );
               },
               child: const Text('Экспорт в PNG'),
             ),
@@ -940,13 +1083,13 @@ class _EditorScreenState extends State<EditorScreen> {
               onPressed: () {
                 Navigator.pop(dialogContext);
                 context.read<ProjectBloc>().add(
-                      ExportPdfEvent(
-                        projectName: nameController.text,
-                        actions: drawState.history,
-                        backgroundPath: drawState.backgroundPath,
-                        patientId: patientId,
-                      ),
-                    );
+                  ExportPdfEvent(
+                    projectName: nameController.text,
+                    actions: drawState.history,
+                    backgroundPath: drawState.backgroundPath,
+                    patientId: patientId,
+                  ),
+                );
               },
               child: const Text('Экспорт в PDF'),
             ),
@@ -999,7 +1142,9 @@ class _EditorScreenState extends State<EditorScreen> {
         builder: (dialogContext) {
           return AlertDialog(
             title: const Text('Сохранить проект'),
-            content: Text('Перезаписать существующий файл проекта "$projectName" или сохранить его как новый?'),
+            content: Text(
+              'Перезаписать существующий файл проекта "$projectName" или сохранить его как новый?',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
@@ -1009,14 +1154,11 @@ class _EditorScreenState extends State<EditorScreen> {
                 onPressed: () {
                   Navigator.pop(dialogContext);
                   final drawState = context.read<DrawBloc>().state;
-                  final actions = drawState.history;
-                  final backgroundPath = drawState.backgroundPath;
                   final patientId = drawState.patientId;
                   projectBloc.add(
                     SaveProjectEvent(
                       projectName: projectName,
-                      actions: actions,
-                      backgroundPath: backgroundPath,
+                      pages: drawState.pages,
                       patientId: patientId,
                     ),
                   );
@@ -1046,7 +1188,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}'
         : 'проект_узи_${DateTime.now().millisecondsSinceEpoch}';
     final nameController = TextEditingController(text: initialName);
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -1063,16 +1205,13 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                final actions = drawState.history;
-                final backgroundPath = drawState.backgroundPath;
                 context.read<ProjectBloc>().add(
-                      SaveProjectEvent(
-                        projectName: nameController.text,
-                        actions: actions,
-                        backgroundPath: backgroundPath,
-                        patientId: patientId,
-                      ),
-                    );
+                  SaveProjectEvent(
+                    projectName: nameController.text,
+                    pages: drawState.pages,
+                    patientId: patientId,
+                  ),
+                );
                 Navigator.pop(dialogContext);
               },
               child: const Text('Сохранить'),
@@ -1090,7 +1229,9 @@ class _EditorScreenState extends State<EditorScreen> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Открыть проект'),
-            content: const Text('Несохранённые изменения будут потеряны. Продолжить?'),
+            content: const Text(
+              'Несохранённые изменения будут потеряны. Продолжить?',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -1120,10 +1261,7 @@ class _EditorScreenState extends State<EditorScreen> {
         if (kIsWeb) {
           final file = result.files.single;
           if (file.bytes != null) {
-            source = ProjectFileSource(
-              bytes: file.bytes,
-              name: file.name,
-            );
+            source = ProjectFileSource(bytes: file.bytes, name: file.name);
           }
         } else {
           final path = result.files.single.path;
@@ -1153,10 +1291,7 @@ class _EditorScreenState extends State<EditorScreen> {
           content: Container(
             constraints: const BoxConstraints(maxWidth: 500, maxHeight: 500),
             child: InteractiveViewer(
-              child: Image.asset(
-                assetPath,
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset(assetPath, fit: BoxFit.contain),
             ),
           ),
           actions: [
@@ -1174,8 +1309,22 @@ class _EditorScreenState extends State<EditorScreen> {
     if (!mounted) return false;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
 
+    // Не перехватываем клавиши, если фокус находится в текстовом поле
     final primaryFocus = FocusManager.instance.primaryFocus;
-    if (primaryFocus?.context?.widget is EditableText) return false;
+    if (primaryFocus != null && primaryFocus.context != null) {
+      final ctx = primaryFocus.context!;
+      if (ctx.widget is EditableText ||
+          ctx.findAncestorWidgetOfExactType<EditableText>() != null ||
+          ctx.findAncestorWidgetOfExactType<TextField>() != null) {
+        return false;
+      }
+    }
+
+    // Не перехватываем клавиши, если открыт любой диалог или модальное окно
+    final ModalRoute<dynamic>? currentRoute = ModalRoute.of(context);
+    if (currentRoute != null && !currentRoute.isCurrent) {
+      return false;
+    }
 
     final isCtrl = HardwareKeyboard.instance.isControlPressed;
     final isShift = HardwareKeyboard.instance.isShiftPressed;
@@ -1271,14 +1420,16 @@ class _EditorScreenState extends State<EditorScreen> {
         await _clearDraft();
         return;
       }
-      
+
       final Map<String, dynamic> draftMap = {
         'patientId': drawState.patientId,
         'backgroundPath': drawState.backgroundPath,
-        'actions': drawState.history.map((a) => DrawActionModel.toJson(a)).toList(),
+        'actions': drawState.history
+            .map((a) => DrawActionModel.toJson(a))
+            .toList(),
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
-      
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('autosave_draft', jsonEncode(draftMap));
       debugPrint('Автосохранение черновика успешно выполнено.');
@@ -1302,19 +1453,22 @@ class _EditorScreenState extends State<EditorScreen> {
       final prefs = await SharedPreferences.getInstance();
       final draftStr = prefs.getString('autosave_draft');
       if (draftStr == null || draftStr.isEmpty) return;
-      
-      final Map<String, dynamic> draftMap = jsonDecode(draftStr) as Map<String, dynamic>;
+
+      final Map<String, dynamic> draftMap =
+          jsonDecode(draftStr) as Map<String, dynamic>;
       final timestamp = draftMap['timestamp'] as int? ?? 0;
-      final timeDiff = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(timestamp));
-      
+      final timeDiff = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(timestamp),
+      );
+
       // Игнорируем черновики старше 24 часов
       if (timeDiff.inHours > 24) {
         await _clearDraft();
         return;
       }
-      
+
       if (!mounted) return;
-      
+
       final confirm = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -1322,7 +1476,7 @@ class _EditorScreenState extends State<EditorScreen> {
           title: const Text('Восстановление черновика'),
           content: const Text(
             'Приложение было закрыто некорректно или обнаружен несохраненный черновик исследования.\n\n'
-            'Хотите восстановить последнее состояние рисования?'
+            'Хотите восстановить последнее состояние рисования?',
           ),
           actions: [
             TextButton(
@@ -1336,24 +1490,28 @@ class _EditorScreenState extends State<EditorScreen> {
           ],
         ),
       );
-      
+
       if (confirm == true && mounted) {
         final actionsList = draftMap['actions'] as List;
         final patientId = draftMap['patientId'] as String? ?? '';
         final backgroundPath = draftMap['backgroundPath'] as String?;
-        
+
         final actions = actionsList
-            .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
+            .map(
+              (json) => DrawActionModel.fromJson(json as Map<String, dynamic>),
+            )
             .toList();
-            
-        context.read<DrawBloc>().add(SetFullStateEvent(
-          history: actions,
-          patientId: patientId,
-          backgroundPath: backgroundPath,
-        ));
-        
+
+        context.read<DrawBloc>().add(
+          SetFullStateEvent(
+            history: actions,
+            patientId: patientId,
+            backgroundPath: backgroundPath,
+          ),
+        );
+
         _patientIdController.text = patientId;
-        
+
         setState(() {
           _savedHistoryIds = null;
           _lastSavedBackgroundPath = null;
@@ -1364,5 +1522,416 @@ class _EditorScreenState extends State<EditorScreen> {
     } catch (e) {
       debugPrint('Ошибка проверки/восстановления черновика: $e');
     }
+  }
+}
+
+class _PageTabBar extends StatelessWidget {
+  const _PageTabBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<DrawBloc, DrawState>(
+      builder: (context, state) {
+        return Container(
+          height: 42,
+          color: const Color(0xFF1E1E1E),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: state.pages.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 4),
+                  itemBuilder: (context, index) {
+                    final page = state.pages[index];
+                    final isSelected = index == state.currentPageIndex;
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          context.read<DrawBloc>().add(SwitchPageEvent(index));
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF0F4C81)
+                                : Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF1976D2)
+                                  : Colors.white12,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                page.pageType == 'pelvis'
+                                    ? Icons.accessibility_new
+                                    : page.pageType == 'uterus'
+                                    ? Icons.favorite
+                                    : Icons.description,
+                                size: 14,
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.white70,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                page.title,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.white70,
+                                ),
+                              ),
+                              if (state.pages.length > 1) ...[
+                                const SizedBox(width: 6),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () {
+                                    context.read<DrawBloc>().add(
+                                      RemovePageEvent(index),
+                                    );
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(2.0),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 12,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'Добавить лист',
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.add_box_outlined,
+                    color: Colors.white70,
+                    size: 20,
+                  ),
+                  onPressed: () => _showAddPageDialog(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddPageDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return SimpleDialog(
+          title: const Text('Добавить новый лист протокола'),
+          children: [
+            // SimpleDialogOption для таза временно скрыт / отключен, но код сохранен:
+            /*
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                context.read<DrawBloc>().add(
+                  AddPageEvent(pageType: 'pelvis', title: 'Таз'),
+                );
+              },
+              child: const Row(
+                children: [
+                  Icon(Icons.accessibility_new, color: Color(0xFF0F4C81)),
+                  SizedBox(width: 12),
+                  Text('Схема органов малого таза (Таз)'),
+                ],
+              ),
+            ),
+            */
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                context.read<DrawBloc>().add(
+                  AddPageEvent(pageType: 'uterus', title: 'Матка'),
+                );
+              },
+              child: const Row(
+                children: [
+                  Icon(Icons.favorite, color: Color(0xFF0F4C81)),
+                  SizedBox(width: 12),
+                  Text('Схема матки (Матка)'),
+                ],
+              ),
+            ),
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                context.read<DrawBloc>().add(
+                  AddPageEvent(pageType: 'custom', title: 'Чистый лист'),
+                );
+              },
+              child: const Row(
+                children: [
+                  Icon(Icons.description, color: Color(0xFF0F4C81)),
+                  SizedBox(width: 12),
+                  Text('Чистый лист (Без схемы)'),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SchemeSelector extends StatelessWidget {
+  const _SchemeSelector();
+
+  void _pickCustomImage(BuildContext context) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: kIsWeb,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      String? imagePath;
+      if (kIsWeb) {
+        final bytes = result.files.single.bytes;
+        if (bytes != null) {
+          imagePath = createBlobUrl(bytes);
+        }
+      } else {
+        imagePath = result.files.single.path;
+      }
+
+      if (imagePath != null && context.mounted) {
+        context.read<DrawBloc>().add(AddCustomSchemeEvent(imagePath));
+      }
+    } catch (e) {
+      debugPrint('Ошибка выбора фонового изображения: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<DrawBloc, DrawState>(
+      builder: (context, state) {
+        final currentPage = state.currentPage;
+
+        // Базовый список стандартных ракурсов
+        final schemes = <Map<String, String>>[
+          {
+            'title': 'исходник',
+            'path': 'assets/schemes/standart_endo.jpg',
+          },
+          {
+            'title': 'Сагиттально',
+            'path': 'assets/schemes/uterus_sagittal.png',
+          },
+          {
+            'title': 'Фронтально',
+            'path': 'assets/schemes/uterus_frontal.png',
+          },
+          {
+            'title': 'Поперечно',
+            'path': 'assets/schemes/uterus_transverse.png',
+          },
+        ];
+
+        // Пользовательские табы "Своё изображение N"
+        for (final item in state.customSchemes) {
+          if (!schemes.any((s) => s['path'] == item.path)) {
+            schemes.add({
+              'title': item.title,
+              'path': item.path,
+              'isCustom': 'true',
+            });
+          }
+        }
+
+        // Подгружаем остальные кастомные фоны (если загружались ранее)
+        final allPaths = <String>{
+          ...currentPage.backgroundPaths,
+          ...state.backgroundPaths,
+          if (state.backgroundPath != null) state.backgroundPath!,
+        };
+        for (final path in allPaths) {
+          if (!schemes.any((s) => s['path'] == path)) {
+            final customIndex = state.customSchemes.length + 1;
+            schemes.add({
+              'title': 'Своё изображение $customIndex',
+              'path': path,
+              'isCustom': 'true',
+            });
+          }
+        }
+
+        return Container(
+          height: 38,
+          color: const Color(0xFF262626),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              const Text(
+                'Ракурс (мультивыбор):',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: schemes.length + 1,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (context, index) {
+                    if (index == schemes.length) {
+                      return ActionChip(
+                        avatar: const Icon(Icons.add_photo_alternate, size: 14, color: Colors.white),
+                        label: const Text(
+                          'Своё изображение',
+                          style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        backgroundColor: const Color(0xFF1565C0),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _pickCustomImage(context),
+                      );
+                    }
+
+                    final item = schemes[index];
+                    final isSelected = currentPage.backgroundPaths.contains(item['path']);
+                    final isCustom = item['isCustom'] == 'true';
+
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFF0F4C81) : Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFF1976D2) : Colors.transparent,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              context.read<DrawBloc>().add(
+                                ToggleSchemeEvent(item['path']!),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isSelected) ...[
+                                    const Icon(Icons.check, size: 12, color: Colors.white),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Text(
+                                    item['title']!,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isSelected ? Colors.white : Colors.white70,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (isCustom) ...[
+                            InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                context.read<DrawBloc>().add(RemoveCustomSchemeEvent(item['path']!));
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.only(right: 8, left: 2, top: 4, bottom: 4),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  size: 15,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Вспомогательный виджет для одновременной подписки на два ValueListenable.
+/// Перестраивается только при изменении одного из нотификаторов.
+class ValueListenableBuilder2<A, B> extends StatelessWidget {
+  final ValueListenable<A> first;
+  final ValueListenable<B> second;
+  final Widget Function(BuildContext context, A a, B b, Widget? child) builder;
+  final Widget? child;
+
+  const ValueListenableBuilder2({
+    super.key,
+    required this.first,
+    required this.second,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<A>(
+      valueListenable: first,
+      child: child,
+      builder: (context, a, _) {
+        return ValueListenableBuilder<B>(
+          valueListenable: second,
+          child: child,
+          builder: (context, b, ch) => builder(context, a, b, ch),
+        );
+      },
+    );
   }
 }

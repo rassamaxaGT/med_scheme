@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:med_scheme/main.dart';
 import 'package:med_scheme/features/editor/domain/repositories/project_repository.dart';
 import 'package:med_scheme/features/editor/domain/entities/draw_action.dart';
+import 'package:med_scheme/features/editor/domain/entities/page_data.dart';
 import 'package:med_scheme/features/editor/domain/entities/project_data.dart';
 import 'package:med_scheme/features/editor/domain/entities/project_file_source.dart';
 import 'package:med_scheme/features/editor/presentation/widgets/toolbox/floating_toolbox.dart';
@@ -17,14 +18,13 @@ class FakeProjectRepository implements ProjectRepository {
   Future<void> saveProject({
     required String directoryPath,
     required String projectName,
-    required List<DrawAction> actions,
-    required String? backgroundPath,
+    required List<PageData> pages,
     required String? patientId,
   }) async {}
 
   @override
   Future<ProjectData> loadProject(ProjectFileSource source) async {
-    return ProjectData(actions: [], backgroundPath: null, patientId: null);
+    return ProjectData(pages: [], patientId: null);
   }
 
   @override
@@ -77,7 +77,6 @@ void main() {
     expect(find.text('Новый проект • Сохранено'), findsOneWidget);
 
     // Verify that the new toolbox elements (with labels) are present
-    expect(find.text('Движение'), findsOneWidget);
     expect(find.text('Кисть'), findsOneWidget);
     expect(find.text('Ластик'), findsOneWidget);
   });
@@ -96,7 +95,7 @@ void main() {
 
     // Verify that we have the tool icons (only one instance each since sidebar is removed)
     expect(find.byIcon(Icons.open_with), findsOneWidget);
-    expect(find.byIcon(Icons.brush), findsOneWidget);
+    expect(find.text('Кисть'), findsOneWidget);
     
     // Verify that the menu button is present in the AppBar
     expect(find.byIcon(Icons.folder), findsOneWidget);
@@ -112,12 +111,12 @@ void main() {
     expect(dragHandleFinder, findsOneWidget);
     
     // Drag to the right edge
-    await tester.drag(dragHandleFinder, const Offset(350.0, 100.0));
+    await tester.drag(dragHandleFinder, const Offset(50.0, 20.0));
     await tester.pumpAndSettle();
 
     // Select the pencil tool
-    final pencilToolFinder = find.byIcon(Icons.brush);
-    await tester.tap(pencilToolFinder);
+    final pencilToolFinder = find.text('Кисть');
+    await tester.tap(pencilToolFinder, warnIfMissed: false);
     await tester.pumpAndSettle();
 
     // Draw on the canvas

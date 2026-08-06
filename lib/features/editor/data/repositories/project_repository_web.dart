@@ -8,10 +8,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
 import '../../domain/repositories/project_repository.dart';
 import '../models/draw_action_model.dart';
+import '../models/page_data_model.dart';
 import '../../presentation/widgets/canvas/canvas_painter.dart';
 import '../../../../core/utils/web_helper.dart';
 import '../../../../core/utils/image_loader.dart';
@@ -28,15 +30,16 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
   Future<void> saveProject({
     required String directoryPath,
     required String projectName,
-    required List<DrawAction> actions,
-    required String? backgroundPath,
+    required List<PageData> pages,
     required String? patientId,
   }) async {
+    final firstBg = pages.isNotEmpty ? pages.first.backgroundPath : null;
     final Map<String, dynamic> projectMap = {
       'projectName': projectName,
       'version': '3.0',
       'patientId': patientId,
-      'actions': actions.map((a) => DrawActionModel.toJson(a)).toList(),
+      'pages': pages.map((p) => PageDataModel.toJson(p)).toList(),
+      'actions': pages.isNotEmpty ? pages.first.history.map((a) => DrawActionModel.toJson(a)).toList() : [],
     };
 
     final jsonString = jsonEncode(projectMap);
@@ -45,8 +48,8 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     final archive = Archive();
     archive.addFile(ArchiveFile('project.json', jsonBytes.length, jsonBytes));
 
-    if (backgroundPath != null) {
-      final bgBytes = getBlobBytes(backgroundPath);
+    if (firstBg != null) {
+      final bgBytes = getBlobBytes(firstBg);
       if (bgBytes != null) {
         archive.addFile(ArchiveFile('background.png', bgBytes.length, bgBytes));
       }
@@ -80,16 +83,42 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     }
 
     final decoded = jsonDecode(jsonContent) as Map<String, dynamic>;
-    final actionsList = decoded['actions'] as List;
     final patientId = decoded['patientId'] as String?;
 
-    final actions = actionsList
-        .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
-        .toList();
+    List<PageData> pages = [];
+    if (decoded.containsKey('pages') && decoded['pages'] is List) {
+      final pagesList = decoded['pages'] as List;
+      pages = pagesList
+          .map((j) => PageDataModel.fromJson(j as Map<String, dynamic>))
+          .toList();
+    } else if (decoded.containsKey('actions') && decoded['actions'] is List) {
+      // Обратная совместимость с версией 1.0/2.0
+      final actionsList = decoded['actions'] as List;
+      final actions = actionsList
+          .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+      pages = [
+        PageData(
+          id: 'page_legacy',
+          pageType: 'custom',
+          title: 'Схема',
+          backgroundPath: extractedBgPath,
+          history: actions,
+        ),
+      ];
+    } else {
+      pages = [
+        PageData(
+          id: 'page_default',
+          pageType: 'custom',
+          title: 'Схема',
+          backgroundPath: extractedBgPath,
+        ),
+      ];
+    }
 
     return ProjectData(
-      actions: actions,
-      backgroundPath: extractedBgPath,
+      pages: pages,
       patientId: patientId,
     );
   }
@@ -120,6 +149,7 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     final painter = CanvasPainter(
       history: actions,
       backgroundImage: bgImage,
+      backgroundPath: backgroundPath,
       patientId: patientId,
     );
     painter.paint(canvas, size);
@@ -164,6 +194,7 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     final painter = CanvasPainter(
       history: actions,
       backgroundImage: bgImage,
+      backgroundPath: backgroundPath,
       patientId: patientId,
     );
     painter.paint(canvas, size);

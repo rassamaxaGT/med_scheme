@@ -1,179 +1,113 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
-_Last updated: 2026-08-01 (v1.0.0+4)_
-
----
-
 ## 1. Executive Summary & Tech Stack
-
-- **Language & Framework**: Dart 3.x (SDK ^3.11.3), Flutter 3.x
-- **Primary Purpose**: «МедРисунок» is a specialized cross-platform drawing and annotation app for ultrasound (УЗИ) physicians. Works like a "medical coloring book" — doctors place standardized markers for pathologies (endometriosis, myomas, IUDs, adhesions) on anatomical schemes or imported scan images. Fully local; no patient data transmitted.
-- **Target Platforms**: Android / iOS (stylus-first) and Web (browser, deployed on Vercel).
-- **Version**: `1.0.0+4`
+- **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x
+- **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform drawing and annotation application designed for ultrasound (УЗИ) physicians. It operates like a "medical coloring book", enabling doctors to manually annotate standardized anatomical templates or imported scan images with markers for pathologies (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps). It works fully locally on the client device.
 - **Key Dependencies**:
-  - `flutter_bloc ^8.1.3`: BLoC state management.
-  - `get_it ^7.6.0`: Service locator / dependency injection.
-  - `shared_storage ^0.8.1`: Android SAF (Scoped Storage) for persistable directory URIs.
-  - `path_provider ^2.1.3`: Platform filesystem paths (iOS sandbox, Documents, etc.).
-  - `archive ^3.6.1`: ZIP encoding/decoding for `.meddraw` project files.
-  - `file_picker ^8.0.0`: Cross-platform file selection dialog.
-  - `shared_preferences ^2.2.3`: Lightweight persistent prefs (last directory URI, etc.).
-  - `pdf ^3.10.8`: PDF export of completed annotation sheets.
-  - `package_info_plus ^9.0.1`: Runtime version/build number display in the About dialog.
+  - [flutter_bloc](https://pub.dev/packages/flutter_bloc) (`^8.1.3`): State management library.
+  - [get_it](https://pub.dev/packages/get_it) (`^7.6.0`): Service locator for dependency injection.
+  - [shared_storage](https://pub.dev/packages/shared_storage) (`^0.8.1`): Android Storage Access Framework (SAF) for persistent directory access.
+  - [path_provider](https://pub.dev/packages/path_provider) (`^2.1.3`): Handles filesystem paths (iOS document sandbox, etc.).
+  - [archive](https://pub.dev/packages/archive) (`^3.6.1`): ZIP package serialization/deserialization for proprietary `.meddraw` files.
+  - [file_picker](https://pub.dev/packages/file_picker) (`^8.0.0`): Native document/file selection dialog.
+  - [shared_preferences](https://pub.dev/packages/shared_preferences) (`^2.2.3`): Persistent app configurations (e.g. last-saved directory URI).
+  - [pdf](https://pub.dev/packages/pdf) (`^3.10.8`): Rendering and exporting completed schemes/canvases to PDF documents.
+  - [package_info_plus](https://pub.dev/packages/package_info_plus) (`^9.0.1`): Accessing and formatting package versions at runtime.
 
 ---
 
 ## 2. Directory Layout & Architecture
-
-- **Architecture Pattern**: Clean Architecture with Feature-First organization (single feature: `editor`).
+- **Architecture Pattern**: Clean Architecture with Feature-First organization. The project focuses on a single feature area: `editor`.
 - **Directory Structure**:
-
-```
-lib/
-├── main.dart                        # App entry point + EditorScreen (~47 KB, refactor candidate)
-├── core/
-│   ├── di/injection.dart            # GetIt DI registration
-│   └── utils/
-│       ├── image_loader.dart        # Conditional import facade
-│       ├── image_loader_io.dart     # dart:io implementation
-│       ├── image_loader_web.dart    # Blob URL / dart:html implementation
-│       ├── image_loader_stub.dart   # Stub for unsupported platforms
-│       ├── web_helper.dart          # Conditional import facade (browser downloads)
-│       ├── web_helper_web.dart      # dart:html / JS interop
-│       └── web_helper_stub.dart     # No-op stub for mobile
-└── features/editor/
-    ├── domain/
-    │   ├── entities/
-    │   │   ├── draw_action.dart     # ToolType enum + DrawAction class hierarchy
-    │   │   ├── project_data.dart    # ProjectData entity (metadata + actions list)
-    │   │   └── project_file_source.dart
-    │   └── repositories/
-    │       └── project_repository.dart  # Abstract repository interface
-    ├── data/
-    │   ├── models/draw_action_model.dart     # JSON serialization for DrawAction subtypes
-    │   └── repositories/
-    │       ├── project_repository_provider.dart  # Conditional import router
-    │       ├── project_repository_impl.dart      # IO impl (Android SAF + iOS sandbox)
-    │       ├── project_repository_web.dart       # Web impl (ZIP in-memory + browser download)
-    │       └── project_repository_stub.dart      # Stub
-    └── presentation/
-        ├── bloc/
-        │   ├── draw_bloc.dart       # Drawing history, undo/redo, active tool
-        │   ├── draw_event.dart
-        │   ├── draw_state.dart
-        │   └── project_bloc.dart    # File I/O state: save/load/export
-        ├── screens/                 # (empty; EditorScreen is still in main.dart)
-        └── widgets/
-            ├── canvas/
-            │   ├── canvas_painter.dart  # CustomPainter: renders all DrawActions (~22 KB)
-            │   └── canvas_widget.dart   # Pointer/gesture handler + pan/zoom (~33 KB)
-            └── toolbox/
-                └── floating_toolbox.dart  # Draggable floating tool selection panel (~30 KB)
-```
-
-- **Assets**: `assets/images/myoma_legend.png`, `assets/images/endo_legend.png`
+  - `/lib`: Main source directory containing:
+    - [main.dart](file:///d:/projects/med_scheme/lib/main.dart): Application entry point.
+    - `/core`: Shared configurations and utilities:
+      - [injection.dart](file:///d:/projects/med_scheme/lib/core/di/injection.dart): Service locator configuration.
+      - [image_loader.dart](file:///d:/projects/med_scheme/lib/core/utils/image_loader.dart): Conditional import interface for loading image assets.
+      - [web_helper.dart](file:///d:/projects/med_scheme/lib/core/utils/web_helper.dart): Conditional import interface for web-specific browser downloads.
+    - `/features/editor`: Core module of the application:
+      - `/domain`: Business logic boundaries (entities and interfaces):
+        - [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/draw_action.dart): Defines [DrawAction] objects representing tools (pencil, shape, stamp, text/arrow annotations).
+        - [page_data.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/page_data.dart): Multi-canvas entity containing canvas properties, canvas history (draw actions list), and local undo/redo stacks.
+        - [project_data.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/project_data.dart): Entity aggregating metadata (e.g. Patient ID) and multiple page targets.
+        - [project_file_source.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/project_file_source.dart): abstraction for active file storage info.
+        - [project_repository.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/repositories/project_repository.dart): Interface defining save, load, and export endpoints.
+      - `/data`: Implementations of domain models and repositories:
+        - [draw_action_model.dart](file:///d:/projects/med_scheme/lib/features/editor/data/models/draw_action_model.dart): JSON mapping/serialization layer for [DrawAction] shapes and markers.
+        - [page_data_model.dart](file:///d:/projects/med_scheme/lib/features/editor/data/models/page_data_model.dart): JSON serialization helper for multi-canvas page data.
+        - [project_repository_impl.dart](file:///d:/projects/med_scheme/lib/features/editor/data/repositories/project_repository_impl.dart): IO repository implementation handling directory permissions, iOS file sharing, and zip exports on mobile/desktop.
+        - [project_repository_web.dart](file:///d:/projects/med_scheme/lib/features/editor/data/repositories/project_repository_web.dart): Web repository implementation wrapping zip processes in-memory and dispatching standard browser downloads.
+      - `/presentation`: Screen view layouts and state BLoCs:
+        - [draw_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_bloc.dart): Managing canvas active state (selected tools, clinical default colors, custom stamps, undo/redo buffers, page switcher logic).
+        - [project_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/project_bloc.dart): Manages filesystem actions (opening, saving, autosaving, exporting files, and directory permission flow).
+        - [editor_screen.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/screens/editor_screen.dart): Desktop/tablet main screen structure containing canvas navigation, toolbar configurations, and action buttons.
+        - `/widgets/canvas`: Painting canvas logic:
+          - [canvas_painter.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_painter.dart): [CustomPainter] implementation rendering imported background templates and [DrawAction] sequences.
+          - [canvas_widget.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart): Interactive drawing surface handling touch/pointer/stylus gestures, palm rejection, rotation overlays, and pinch-to-zoom.
+        - `/widgets/toolbox`: Toolbar controls:
+          - [floating_toolbox.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/toolbox/floating_toolbox.dart): Draggable glassmorphic floating toolbar.
 
 ---
 
 ## 3. Core Entry Points & Initialization Flow
-
-- **Entry Point**: lib/main.dart
-- **Steps**:
-  1. `WidgetsFlutterBinding.ensureInitialized()`
-  2. `await initInjection()` — registers `ProjectRepository` (conditional import) and singletons via GetIt.
-  3. `runApp(MyApp())` — mounts `MultiBlocProvider` with `DrawBloc` + `ProjectBloc`, routes to `EditorScreen`.
-  4. `ProjectBloc` dispatches `InitializeProjectEvent()` on creation to restore last saved directory.
-  5. `EditorScreen` — single screen, uses a `Stack`: `CanvasWidget` (full-screen), `FloatingToolbox` (positioned overlay), top AppBar actions.
-
----
-
-## 4. Core Domain Model
-
-File: lib/features/editor/domain/entities/draw_action.dart
-
-| Class | Description |
-|---|---|
-| `DrawAction` (abstract) | Base: `id`, `color`, `strokeWidth`, transform: `scaleX/Y`, `offsetX/Y` |
-| `StrokeAction` | Freehand paths. `points: List<Offset>`, `brushType` ('pencil' / 'adhesions' / 'fibrosis') |
-| `ShapeAction` | Geometric shapes (endometrioma oval, myoma circle). `figoType` for FIGO classification |
-| `StampAction` | Point stamps: IUD (ВМС), foci, custom PNG |
-| `TextAction` | Arrow-with-label annotation. `isDashed` for distance lines |
-
-**ToolType enum** (12 values): `pencil`, `eraser`, `infiltrate`, `adhesions`, `fibrosis`, `endometrioma`, `myoma`, `iud`, `foci`, `arrow`, `customStamp`, `move`.
+- **Entry Point File**: [main.dart](file:///d:/projects/med_scheme/lib/main.dart)
+- **Initialization Steps**:
+  1. `WidgetsFlutterBinding.ensureInitialized()` is executed to wire up engine services.
+  2. `await initInjection()` loads dependency maps in [injection.dart](file:///d:/projects/med_scheme/lib/core/di/injection.dart) (registers platform-specific [ProjectRepository] implementations).
+  3. `runApp(const MyApp())` mounts the widget tree.
+  4. Global providers [DrawBloc] and [ProjectBloc] are created.
+  5. `ProjectBloc` immediately dispatches `InitializeProjectEvent()` to read and verify previous storage directories.
+  6. The app displays [EditorScreen](file:///d:/projects/med_scheme/lib/features/editor/presentation/screens/editor_screen.dart), checking for any existing draft and displaying default schemes ("Таз", "Матка").
 
 ---
 
-## 5. Rendering Architecture
+## 4. Core Domain Model (DrawAction)
+File: [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/draw_action.dart)
 
-- **CanvasWidget** (canvas_widget.dart): `Listener` + `GestureDetector`. Stylus pressure (`PointerEvent.pressure`), palm rejection (ignores fingers when stylus active), pinch-to-zoom/pan. Dispatches draw events to `DrawBloc`.
-- **CanvasPainter** (canvas_painter.dart): `CustomPainter`. Renders `backgroundImage`, then iterates `DrawBloc` state actions. Uses `ui.PathMetrics` for `infiltrate` barbed-wire effect and `adhesions` spiderweb effect. Text/arrows are drawn in screen-space (not canvas-space) so label size stays constant at any zoom level.
-
----
-
-## 6. Crossplatform Strategy (Conditional Imports)
-
-| Abstraction File | Mobile/Desktop impl | Web impl |
+| Entity Class | Represented Tools / Types | Primary Fields |
 |---|---|---|
-| image_loader.dart | `image_loader_io.dart` | `image_loader_web.dart` |
-| web_helper.dart | `web_helper_stub.dart` (no-ops) | `web_helper_web.dart` (JS interop) |
-| project_repository_provider.dart | `project_repository_impl.dart` | `project_repository_web.dart` |
+| [StrokeAction] | `pencil`, `adhesions` (spiderweb), `fibrosis` (crosshatch) | `points: List<Offset>`, `isEraser: bool`, `brushType: String`, `isDashed: bool` |
+| [ShapeAction] | `endometrioma` (oval), `myoma` (circle), `infiltrate`, `bowelInfiltrate`, `follicle`, `adenomyosis` | `startPoint: Offset`, `endPoint: Offset`, `shapeType: String`, `rotation: double` |
+| [StampAction] | `iud` (IUD), `foci` (lesions), `polyp`, `gui`, `customStamp` | `position: Offset`, `stampType: String`, `customStampPath: String?`, `rotation: double` |
+| [TextAction] | distance lines, arrows with tags | `startPoint: Offset`, `endPoint: Offset`, `text: String`, `isDashed: bool` |
 
 ---
 
-## 7. File Format: `.meddraw`
-
-A ZIP archive (via `archive` package) containing:
-- `background.png` — Imported ultrasound image or blank canvas.
-- `project.json` — Serialized `DrawAction` list (via `DrawActionModel`) + patient ID + metadata.
-
-Serialization runs in a Dart isolate via `compute()` to avoid UI jank.
-
----
-
-## 8. Key Workflows & Commands
-
-- **Run (dev)**: `flutter run`
-- **Run on Chrome**: `flutter run -d chrome`
-- **Build Web (Vercel)**: `flutter build web`
-- **Build APK**: `flutter build apk`
-- **Run Tests**: `flutter test`
-- **Analyze**: `flutter analyze`
-- **Format**: `dart format .`
-- **Deploy**: `.\deploy.ps1` (PowerShell script — builds web + deploys to Vercel)
+## 5. Key Workflows & Commands
+- **Run local development server/app**: `flutter run`
+- **Run web project locally**: `flutter run -d chrome`
+- **Build production web target**: `flutter build web`
+- **Build production Android target**: `flutter build apk`
+- **Run automated test suites**: `flutter test` (Tests located at [test/](file:///d:/projects/med_scheme/test))
+- **Static analysis checklist**: `flutter analyze`
+- **Auto-format source files**: `dart format .`
+- **Vercel Deploy Pipeline**: `.\deploy.ps1` (powershell script compiling web release and uploading artifacts to Vercel).
 
 ---
 
-## 9. Development Conventions & Guidelines
-
-- **State Management**: BLoC exclusively. No `setState` for business logic.
-- **DI**: Register in lib/core/di/injection.dart, resolve with `getIt<Type>()`.
-- **Design Theme**: Material 3 dark, seed color `Color(0xFF0F4C81)` (medical blue).
-- **Toolbox**: floating_toolbox.dart — draggable, glassmorphism-styled, minimum 48dp touch targets.
-- **Linting**: `flutter_lints` via analysis_options.yaml.
-- **Canvas local state**: Current stroke points are held locally in `CanvasWidget`; committed to `DrawBloc` only on `onPanEnd` / pointer-up.
-- **Unsaved-changes tracking**: Compares full action-ID lists (`List<String> _savedHistoryIds`), not just list length — correctly survives Undo/Redo (fix #3, v1.0.0+4).
-- **Canvas clear safety**: "Clear canvas" action shows a confirmation dialog before dispatching `ClearCanvasEvent` (fix #10, v1.0.0+4).
-- **PopScope pattern**: `canPop: false` + manual `Navigator.pop()` in `onPopInvokedWithResult` — avoids stale `canPop` values with BLoC state (fix #8, v1.0.0+4).
+## 6. Development Conventions & Guidelines
+- **State Isolation**: Business state flows strictly through BLoC classes ([DrawBloc], [ProjectBloc]). Avoid local widget state mutations except for transient drawing lines/points inside [CanvasWidget] which are pushed to BLoC on gesture completion.
+- **Crossplatform Facades**: Platform-specific logic (e.g. mobile vs. web file downloads) must be written via conditional imports:
+  - Repositories: [project_repository_provider.dart](file:///d:/projects/med_scheme/lib/features/editor/data/repositories/project_repository_provider.dart)
+  - Image Loading: [image_loader.dart](file:///d:/projects/med_scheme/lib/core/utils/image_loader.dart)
+  - Web Helpers: [web_helper.dart](file:///d:/projects/med_scheme/lib/core/utils/web_helper.dart)
+- **Serialization Safety**: Project saves are encoded as standard ZIP archives containing a flat layout: `background.png` (optional blank scheme background) and `project.json` (containing patient metadata and drawing states). Saving processes are scheduled inside standard background compute isolates to maintain 60 FPS UI rendering.
+- **Drawing Details**:
+  - `infiltrate` uses `ui.PathMetrics` to draw custom wave elements.
+  - `adhesions` renders custom spiderwebs based on standard point paths.
+  - `fibrosis` draws crosshatched patterns under a 90-degree slant.
+- **Layout guidelines**: Floating toolbar uses glassmorphic blur with custom touch limits to prevent layout collisions under different device profiles.
 
 ---
 
-## 10. Active Development Context
-
-- **Status**: All 5 implementation phases are **complete**. Working tree: only `deploy.ps1` modified locally. Branch: `main`.
-- **Recent git commits**:
-  1. `e9c2414` — Добавлено отображение версии и исправлены ошибки (v1.0.0+4) — added `package_info_plus`, fixed unsaved-changes tracking, PopScope, clear confirmation.
-  2. `e5a24da` — Fix Android build settings and test deployment script (v1.0.0+3)
-  3. `3f66b16` — Add deployment script and update project (v1.0.0+2)
-  4. `65df3bf` — docs: added plain-text PROJECT_DOCUMENTATION.txt
-  5. `8d3bb5b` — docs: added PROJECT_DOCUMENTATION.md with architecture and spec
-- **Active Plans** (in `.agent/plans/`):
-  - task.md — All phases complete.
-  - ui_ux_specification.md — Floating toolbox design spec.
-  - implementation_plan.md — Full implementation plan.
-  - architecture.md — Architecture reference.
-- **Known Challenges / Refactor Candidates**:
-  - `main.dart` is ~47 KB — `EditorScreen` and all dialogs should be extracted to `presentation/screens/`.
-  - `canvas_widget.dart` (~33 KB) and `canvas_painter.dart` (~22 KB) are large; splitting is a future improvement.
-  - `presentation/screens/` directory exists but is currently empty.
-  - Android SAF (`shared_storage`) requires careful persistable URI handling.
-  - Web: no `dart:io` — all file I/O uses browser Blob/download APIs via `web_helper_web.dart`.
+## 7. Active Development Context
+- **Current Goals/Tasks**: The core feature set (v2.0 Upgrade Plan) has been fully implemented, covering:
+  - Multi-canvas tab navigation.
+  - Advanced shape drawing and stamp rotation tools.
+  - Specific clinical markings (Indian Headress, follicles, adenomyosis, polyps, bowel infiltrates).
+  - Web deployments and platform sandboxing.
+- **Recent Modifying Commits**:
+  - `d5106e5` — Relocated project configuration controls to the global AppBar.
+  - `3cc4d81` — Render optimization for canvas spikes.
+  - `e9c2414` — Cleaned up build/runtime version labels.
+- **Verification Status**: High coverage unit and widget tests pass successfully via `flutter test`.

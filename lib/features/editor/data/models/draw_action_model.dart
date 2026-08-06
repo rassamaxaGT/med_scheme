@@ -3,63 +3,53 @@ import '../../domain/entities/draw_action.dart';
 
 class DrawActionModel {
   static Map<String, dynamic> toJson(DrawAction action) {
+    final baseMap = <String, dynamic>{
+      'id': action.id,
+      'color': action.color.toARGB32(),
+      'strokeWidth': action.strokeWidth,
+      'scaleX': action.scaleX,
+      'scaleY': action.scaleY,
+      'offsetX': action.offsetX,
+      'offsetY': action.offsetY,
+      'targetSchemePath': action.targetSchemePath,
+    };
+
     if (action is StrokeAction) {
       return {
+        ...baseMap,
         'type': 'stroke',
-        'id': action.id,
-        'color': action.color.toARGB32(),
-        'strokeWidth': action.strokeWidth,
         'points': action.points.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
         'isEraser': action.isEraser,
         'brushType': action.brushType,
-        'scaleX': action.scaleX,
-        'scaleY': action.scaleY,
-        'offsetX': action.offsetX,
-        'offsetY': action.offsetY,
+        'isDashed': action.isDashed,
       };
     } else if (action is ShapeAction) {
       return {
+        ...baseMap,
         'type': 'shape',
-        'id': action.id,
-        'color': action.color.toARGB32(),
-        'strokeWidth': action.strokeWidth,
         'startPoint': {'x': action.startPoint.dx, 'y': action.startPoint.dy},
         'endPoint': {'x': action.endPoint.dx, 'y': action.endPoint.dy},
         'shapeType': action.shapeType,
         'figoType': action.figoType,
-        'scaleX': action.scaleX,
-        'scaleY': action.scaleY,
-        'offsetX': action.offsetX,
-        'offsetY': action.offsetY,
+        'rotation': action.rotation,
       };
     } else if (action is StampAction) {
       return {
+        ...baseMap,
         'type': 'stamp',
-        'id': action.id,
-        'color': action.color.toARGB32(),
-        'strokeWidth': action.strokeWidth,
         'position': {'x': action.position.dx, 'y': action.position.dy},
         'stampType': action.stampType,
         'customStampPath': action.customStampPath,
-        'scaleX': action.scaleX,
-        'scaleY': action.scaleY,
-        'offsetX': action.offsetX,
-        'offsetY': action.offsetY,
+        'rotation': action.rotation,
       };
     } else if (action is TextAction) {
       return {
+        ...baseMap,
         'type': 'text',
-        'id': action.id,
-        'color': action.color.toARGB32(),
-        'strokeWidth': action.strokeWidth,
         'startPoint': {'x': action.startPoint.dx, 'y': action.startPoint.dy},
         'endPoint': {'x': action.endPoint.dx, 'y': action.endPoint.dy},
         'text': action.text,
         'isDashed': action.isDashed,
-        'scaleX': action.scaleX,
-        'scaleY': action.scaleY,
-        'offsetX': action.offsetX,
-        'offsetY': action.offsetY,
       };
     }
     throw UnimplementedError('Unknown DrawAction subclass: ${action.runtimeType}');
@@ -74,6 +64,7 @@ class DrawActionModel {
     final scaleY = (json['scaleY'] as num?)?.toDouble() ?? 1.0;
     final offsetX = (json['offsetX'] as num?)?.toDouble() ?? 0.0;
     final offsetY = (json['offsetY'] as num?)?.toDouble() ?? 0.0;
+    final targetSchemePath = json['targetSchemePath'] as String?;
 
     switch (type) {
       case 'stroke':
@@ -86,10 +77,12 @@ class DrawActionModel {
               .toList(),
           isEraser: json['isEraser'] as bool? ?? false,
           brushType: json['brushType'] as String? ?? 'pencil',
+          isDashed: json['isDashed'] as bool? ?? false,
           scaleX: scaleX,
           scaleY: scaleY,
           offsetX: offsetX,
           offsetY: offsetY,
+          targetSchemePath: targetSchemePath,
         );
       case 'shape':
         return ShapeAction(
@@ -106,10 +99,12 @@ class DrawActionModel {
           ),
           shapeType: json['shapeType'] as String,
           figoType: json['figoType'] as String?,
+          rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
           scaleX: scaleX,
           scaleY: scaleY,
           offsetX: offsetX,
           offsetY: offsetY,
+          targetSchemePath: targetSchemePath,
         );
       case 'stamp':
         return StampAction(
@@ -122,10 +117,12 @@ class DrawActionModel {
           ),
           stampType: json['stampType'] as String,
           customStampPath: json['customStampPath'] as String?,
+          rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
           scaleX: scaleX,
           scaleY: scaleY,
           offsetX: offsetX,
           offsetY: offsetY,
+          targetSchemePath: targetSchemePath,
         );
       case 'text':
         return TextAction(
@@ -146,6 +143,7 @@ class DrawActionModel {
           scaleY: scaleY,
           offsetX: offsetX,
           offsetY: offsetY,
+          targetSchemePath: targetSchemePath,
         );
       default:
         throw UnimplementedError('Unknown DrawAction type in JSON: $type');

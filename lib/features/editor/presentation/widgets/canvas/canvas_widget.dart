@@ -1,5 +1,6 @@
 import '../../../../../core/utils/image_loader.dart';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -37,7 +38,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   String? _selectedActionId;
   Offset? _dragStartPoint;
   DrawAction? _originalActionForDrag;
+  double _dragStartRotation = 0.0;
   String? _draggedHandle; // 'topLeft', 'topRight', 'bottomLeft', 'bottomRight' или null
+  // Для Paint-like resize: пред-scale позиции захваченного/anchor углов + canvas-позиция anchor
+  Offset? _rotatedDraggedCorner; // A = rotate(draggedLocal, rotCenter, angle)
+  Offset? _rotatedAnchorCorner;  // B = rotate(anchorLocal,  rotCenter, angle)
+  Offset? _anchorCanvas;         // canvas-позиция anchor при старте drag (без cell offset)
 
   // Последняя выбранная кисть для рисования
   ToolType _lastSelectedBrush = ToolType.pencil;
@@ -46,6 +52,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   // Динамически загруженное фоновое изображение из BLoC
   ui.Image? _loadedBackgroundImage;
   String? _loadedBackgroundPath;
+
+  // Кэш фоновых изображений (в т.ч. пользовательских)
+  final Map<String, ui.Image?> _bgImages = {};
 
   // Кэш пользовательских PNG-штампов
   final Map<String, ui.Image?> _stampImages = {};
@@ -135,10 +144,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           _isAutoSwitchedToMove = false;
         }
 
-        // Загрузка фонового изображения, если его путь изменился
-        if (state.backgroundPath != _loadedBackgroundPath) {
-          _loadedBackgroundPath = state.backgroundPath;
-          Future.microtask(() => _loadBackground(state.backgroundPath));
+        // Загрузка фонового изображения, если список изменился
+        final String? targetBgPath = state.backgroundPaths.contains('assets/schemes/standart_endo.jpg')
+            ? 'assets/schemes/standart_endo.jpg'
+            : state.backgroundPath;
+        if (targetBgPath != _loadedBackgroundPath) {
+          _loadedBackgroundPath = targetBgPath;
+          Future.microtask(() => _loadBackground(targetBgPath));
+        }
+
+        // Автоматическая подгрузка изображений для пользовательских фонов
+        for (final path in state.backgroundPaths) {
+          if (!_bgImages.containsKey(path)) {
+            _bgImages[path] = null;
+            Future.microtask(() => _loadBgImage(path));
+          }
         }
 
         // Автоматическая подгрузка изображений для пользовательских штампов из истории
@@ -177,6 +197,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                   _eraserCursorPosition = null;
                   _currentPoints = [];
                 });
+              } else if (activeState.currentTool == ToolType.move) {
+                setState(() {
+                  _draggedHandle = null;
+                  _activeAction = null;
+                  _originalActionForDrag = null;
+                  _rotatedDraggedCorner = null;
+                  _rotatedAnchorCorner = null;
+                  _anchorCanvas = null;
+                });
               }
             },
             onPointerSignal: _onPointerSignal,
@@ -208,6 +237,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                           // Не отображаем _activeAction для ластика — только курсор-круг
                           activeAction: state.currentTool != ToolType.eraser ? _activeAction : null,
                           backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
+                          backgroundPaths: state.backgroundPaths,
+                          backgroundPath: state.backgroundPath,
+                          bgImages: Map<String, ui.Image>.fromEntries(
+                            _bgImages.entries
+                                .where((e) => e.value != null)
+                                .map((e) => MapEntry(e.key, e.value!)),
+                          ),
                           stampImages: Map<String, ui.Image>.fromEntries(
                             _stampImages.entries
                                 .where((e) => e.value != null)
@@ -261,6 +297,29 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
   }
 
+  // Загрузка любого фонового изображения (в т.ч. пользовательского)
+  void _loadBgImage(String path) async {
+    try {
+      final image = await loadUiImage(path);
+      if (mounted) {
+        setState(() {
+          _bgImages[path] = image;
+          if (_loadedBackgroundImage == null || path == _loadedBackgroundPath) {
+            _loadedBackgroundImage = image;
+            _loadedBackgroundPath = path;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки фонового изображения $path: $e');
+      if (mounted) {
+        setState(() {
+          _bgImages.remove(path);
+        });
+      }
+    }
+  }
+
   // Загрузка изображения пользовательского штампа
   void _loadCustomStampImage(String path) async {
     try {
@@ -280,6 +339,86 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
   }
 
+  Offset _getCellOffsetForPath(String? path) {
+    if (path == null) return Offset.zero;
+    final activePaths = context.read<DrawBloc>().state.backgroundPaths;
+    final idx = activePaths.indexOf(path);
+    if (idx == -1) return Offset.zero;
+
+    final cols = activePaths.length <= 1 ? 1 : 2;
+    final double col0W = 600.0 * CanvasPainter.getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
+
+    final col = idx % cols;
+    final row = idx ~/ cols;
+    return Offset(col == 0 ? 0.0 : col0W, row * 600.0);
+  }
+
+  Offset _getSchemeLocalPosition(Offset rawCanvasPt, String? targetPath) {
+    if (targetPath == null) return rawCanvasPt;
+    final cellOffset = _getCellOffsetForPath(targetPath);
+    final pInCell = rawCanvasPt - cellOffset;
+    final double origHeight = CanvasPainter.getOriginalSchemeSize(targetPath).height;
+    final double scale = origHeight / 600.0;
+    return pInCell * scale;
+  }
+
+  Offset _schemeToCanvasSpace(Offset point, String? path) {
+    if (path == null) return point;
+    final activePaths = context.read<DrawBloc>().state.backgroundPaths;
+    final idx = activePaths.indexOf(path);
+    if (idx == -1) return point;
+
+    final cols = activePaths.length <= 1 ? 1 : 2;
+    final double col0W = 600.0 * CanvasPainter.getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
+
+    final double origHeight = CanvasPainter.getOriginalSchemeSize(path).height;
+
+    // Масштабируем точку в пространство высотой 600.0
+    final double scale = 600.0 / origHeight;
+    final scaledPoint = point * scale;
+
+    final col = idx % cols;
+    final row = idx ~/ cols;
+    final cellOffset = Offset(col == 0 ? 0.0 : col0W, row * 600.0);
+
+    return scaledPoint + cellOffset;
+  }
+
+  ({String? targetSchemePath, Offset localPoint}) _getSchemeInfo(
+    Offset canvasPoint,
+    List<String> backgroundPaths,
+  ) {
+    if (backgroundPaths.isEmpty) {
+      return (targetSchemePath: null, localPoint: canvasPoint);
+    }
+    final count = backgroundPaths.length;
+    final int cols = count <= 1 ? 1 : 2;
+
+    final double col0W = 600.0 * CanvasPainter.getSchemeAspectRatio(backgroundPaths[0]);
+
+    for (int i = 0; i < backgroundPaths.length; i++) {
+      final int col = i % cols;
+      final int row = i ~/ cols;
+      final double cellW = col == 0 ? col0W : 800.0;
+      final double cellH = 600.0;
+
+      final cellRect = Rect.fromLTWH(col == 0 ? 0.0 : col0W, row * 600.0, cellW, cellH);
+      if (cellRect.contains(canvasPoint)) {
+        // Масштабируем localPoint обратно в оригинальное пространство схемы
+        final double origHeight = CanvasPainter.getOriginalSchemeSize(backgroundPaths[i]).height;
+        final double scale = origHeight / 600.0;
+        return (
+          targetSchemePath: backgroundPaths[i],
+          localPoint: (canvasPoint - cellRect.topLeft) * scale,
+        );
+      }
+    }
+    return (
+      targetSchemePath: backgroundPaths.first,
+      localPoint: canvasPoint,
+    );
+  }
+
   // Плавающая кнопка удаления выделенного объекта
   Widget _buildDeleteButton(BuildContext context, DrawState state) {
     DrawAction? selected;
@@ -295,30 +434,23 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
     if (selected == null) return const SizedBox.shrink();
 
-    final bounds = CanvasPainter.getActionBounds(selected);
-    if (bounds == Rect.zero) return const SizedBox.shrink();
+    final originalBounds = CanvasPainter.getOriginalActionBounds(selected);
+    if (originalBounds == Rect.zero) return const SizedBox.shrink();
 
-    final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
-    final baseSize = bgImage != null
-        ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
-        : const Size(800.0, 600.0);
     final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
     final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
-    final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
 
-    final double drawScaleX = drawRect.width / baseSize.width;
-    final double drawScaleY = drawRect.height / baseSize.height;
+    final scaleY = selected.scaleY.abs() == 0 ? 1.0 : selected.scaleY.abs();
+    final localDeletePt = Offset(originalBounds.center.dx, originalBounds.bottom + (25.0 / scaleY));
+    final deleteCanvasPt = CanvasPainter.getTransformedActionPoint(selected, localDeletePt);
+    final deleteScreenPt = _canvasToScreen(_schemeToCanvasSpace(deleteCanvasPt, selected.targetSchemePath));
 
-    // Переводим bounds холста в экранные координаты с учётом Zoom/Pan и центрирования
-    final screenLeft = (bounds.left * drawScaleX + drawRect.left) * _scale + _offset.dx;
-    final screenTop = (bounds.top * drawScaleY + drawRect.top) * _scale + _offset.dy;
-    final screenRight = (bounds.right * drawScaleX + drawRect.left) * _scale + _offset.dx;
-    final buttonX = (screenLeft + screenRight) / 2 - 20; // по центру по X
-    final buttonY = screenTop - 44.0; // чуть выше рамки
+    final buttonX = deleteScreenPt.dx - 20;
+    final buttonY = deleteScreenPt.dy - 20;
 
     return Positioned(
-      left: buttonX,
-      top: buttonY.clamp(4.0, double.infinity),
+      left: buttonX.clamp(4.0, containerSize.width - 48.0),
+      top: buttonY.clamp(4.0, containerSize.height - 48.0),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -378,7 +510,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       }
       return minDistance;
     } else if (action is ShapeAction) {
-      final rect = Rect.fromPoints(action.startPoint, action.endPoint);
+      final rect = Rect.fromPoints(action.startPoint, action.endPoint).inflate(8.0);
+      if (rect.contains(p)) return 0.0;
       final corners = [
         rect.topLeft,
         rect.topRight,
@@ -392,15 +525,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           minDistance = d;
         }
       }
-      final center = rect.center;
-      final distToCenter = (p - center).distance;
-      if (distToCenter < minDistance) {
-        minDistance = distToCenter;
-      }
       return minDistance;
     } else if (action is TextAction) {
       return _getDistanceToSegment(p, action.startPoint, action.endPoint);
     } else if (action is StampAction) {
+      final bounds = CanvasPainter.getOriginalActionBounds(action);
+      if (bounds.contains(p)) return 0.0;
       return (p - action.position).distance;
     }
     return double.infinity;
@@ -419,10 +549,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         points: original.points,
         isEraser: original.isEraser,
         brushType: original.brushType,
+        isDashed: original.isDashed,
         scaleX: original.scaleX,
         scaleY: original.scaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is ShapeAction) {
       return ShapeAction(
@@ -433,10 +565,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         endPoint: original.endPoint,
         shapeType: original.shapeType,
         figoType: original.figoType,
+        rotation: original.rotation,
         scaleX: original.scaleX,
         scaleY: original.scaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is StampAction) {
       return StampAction(
@@ -446,10 +580,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         position: original.position,
         stampType: original.stampType,
         customStampPath: original.customStampPath,
+        rotation: original.rotation,
         scaleX: original.scaleX,
         scaleY: original.scaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is TextAction) {
       return TextAction(
@@ -464,6 +600,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         scaleY: original.scaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     }
     return original;
@@ -474,13 +611,54 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   // Обратная операция к: rendered_p = p * scale + offset
   // Поэтому: object_p = (canvas_p - offset) / scale
   Offset _canvasToObjectSpace(Offset p, DrawAction action) {
+    final path = action.targetSchemePath;
+    final activePaths = context.read<DrawBloc>().state.backgroundPaths;
+    final idx = activePaths.indexOf(path ?? '');
+    
+    final double col0W = 600.0 * CanvasPainter.getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
+    final double origHeight = CanvasPainter.getOriginalSchemeSize(path ?? '').height;
+        
+    final col = idx == -1 ? 0 : (idx % (activePaths.length <= 1 ? 1 : 2));
+    final row = idx == -1 ? 0 : (idx ~/ (activePaths.length <= 1 ? 1 : 2));
+    
+    final cellOffset = Offset(col == 0 ? 0.0 : col0W, row * 600.0);
+    final pInCellUnified = p - cellOffset;
+    
+    // Переводим из пространства 600.0 в оригинальное пространство схемы
+    final double scaleBack = origHeight / 600.0;
+    final pInCellOriginal = pInCellUnified * scaleBack;
+
     final double scaleX = action.scaleX == 0 ? 1.0 : action.scaleX;
     final double scaleY = action.scaleY == 0 ? 1.0 : action.scaleY;
 
-    return Offset(
-      (p.dx - action.offsetX) / scaleX,
-      (p.dy - action.offsetY) / scaleY,
+    final unscaled = Offset(
+      (pInCellOriginal.dx - action.offsetX) / scaleX,
+      (pInCellOriginal.dy - action.offsetY) / scaleY,
     );
+
+    double rotation = 0.0;
+    Offset rotationCenter = Offset.zero;
+
+    if (action is ShapeAction) {
+      rotation = action.rotation;
+      rotationCenter = Rect.fromPoints(action.startPoint, action.endPoint).center;
+    } else if (action is StampAction) {
+      rotation = action.rotation;
+      rotationCenter = action.position;
+    }
+
+    if (rotation != 0.0) {
+      final dx = unscaled.dx - rotationCenter.dx;
+      final dy = unscaled.dy - rotationCenter.dy;
+      final cosA = math.cos(-rotation);
+      final sinA = math.sin(-rotation);
+      return Offset(
+        rotationCenter.dx + dx * cosA - dy * sinA,
+        rotationCenter.dy + dx * sinA + dy * cosA,
+      );
+    }
+
+    return unscaled;
   }
 
   // Метод изменения размера объекта (обновляем scaleX/scaleY и offsetX/offsetY)
@@ -488,8 +666,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     final originalBounds = CanvasPainter.getOriginalActionBounds(original);
     if (originalBounds.width == 0 || originalBounds.height == 0) return original;
 
-    final newScaleX = newRect.width / originalBounds.width;
-    final newScaleY = newRect.height / originalBounds.height;
+    double newScaleX = newRect.width / originalBounds.width;
+    double newScaleY = newRect.height / originalBounds.height;
+
+    // Запрещаем отрицательный масштаб — объект не должен отражаться при сжатии
+    const double minScale = 0.05;
+    newScaleX = newScaleX.clamp(minScale, double.infinity);
+    newScaleY = newScaleY.clamp(minScale, double.infinity);
+
+    // Для кругов (эндометриома, миома) сохраняем пропорции 1:1 при изменении размера
+    if (original is ShapeAction &&
+        (original.shapeType == 'endometrioma' || original.shapeType == 'myoma')) {
+      final double scale = (newScaleX + newScaleY) / 2;
+      newScaleX = scale;
+      newScaleY = scale;
+    }
 
     final newOffsetX = newRect.left - originalBounds.left * newScaleX;
     final newOffsetY = newRect.top - originalBounds.top * newScaleY;
@@ -502,10 +693,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         points: original.points,
         isEraser: original.isEraser,
         brushType: original.brushType,
+        isDashed: original.isDashed,
         scaleX: newScaleX,
         scaleY: newScaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is ShapeAction) {
       return ShapeAction(
@@ -516,10 +709,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         endPoint: original.endPoint,
         shapeType: original.shapeType,
         figoType: original.figoType,
+        rotation: original.rotation,
         scaleX: newScaleX,
         scaleY: newScaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is StampAction) {
       return StampAction(
@@ -529,10 +724,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         position: original.position,
         stampType: original.stampType,
         customStampPath: original.customStampPath,
+        rotation: original.rotation,
         scaleX: newScaleX,
         scaleY: newScaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     } else if (original is TextAction) {
       return TextAction(
@@ -547,6 +744,75 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         scaleY: newScaleY,
         offsetX: newOffsetX,
         offsetY: newOffsetY,
+        targetSchemePath: original.targetSchemePath,
+      );
+    }
+    return original;
+  }
+
+  /// Применяет новый scale и offset к объекту, сохраняя все остальные поля.
+  /// Используется при resize в локальном пространстве объекта (корректно для повёрнутых).
+  DrawAction _applyScaleAndOffset(DrawAction original, double scaleX, double scaleY, double offsetX, double offsetY) {
+    if (original is StrokeAction) {
+      return StrokeAction(
+        id: original.id,
+        color: original.color,
+        strokeWidth: original.strokeWidth,
+        points: original.points,
+        isEraser: original.isEraser,
+        brushType: original.brushType,
+        isDashed: original.isDashed,
+        scaleX: scaleX,
+        scaleY: scaleY,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        targetSchemePath: original.targetSchemePath,
+      );
+    } else if (original is ShapeAction) {
+      return ShapeAction(
+        id: original.id,
+        color: original.color,
+        strokeWidth: original.strokeWidth,
+        startPoint: original.startPoint,
+        endPoint: original.endPoint,
+        shapeType: original.shapeType,
+        figoType: original.figoType,
+        rotation: original.rotation,
+        scaleX: scaleX,
+        scaleY: scaleY,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        targetSchemePath: original.targetSchemePath,
+      );
+    } else if (original is StampAction) {
+      return StampAction(
+        id: original.id,
+        color: original.color,
+        strokeWidth: original.strokeWidth,
+        position: original.position,
+        stampType: original.stampType,
+        customStampPath: original.customStampPath,
+        rotation: original.rotation,
+        scaleX: scaleX,
+        scaleY: scaleY,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        targetSchemePath: original.targetSchemePath,
+      );
+    } else if (original is TextAction) {
+      return TextAction(
+        id: original.id,
+        color: original.color,
+        strokeWidth: original.strokeWidth,
+        startPoint: original.startPoint,
+        endPoint: original.endPoint,
+        text: original.text,
+        isDashed: original.isDashed,
+        scaleX: scaleX,
+        scaleY: scaleY,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        targetSchemePath: original.targetSchemePath,
       );
     }
     return original;
@@ -554,14 +820,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
   // Преобразование глобальных экранных координат в координаты холста с учетом Zoom/Pan и центрирования
   Offset _screenToCanvas(Offset screenOffset) {
-    // 1. Обратное преобразование масштаба и сдвига Zoom/Pan
+    // 1. Снимаем Zoom и Pan
     final unzoomed = (screenOffset - _offset) / _scale;
 
     // 2. Обратное преобразование центрирования и вписывания contain-бокса
-    final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
-    final baseSize = bgImage != null
-        ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
-        : const Size(800.0, 600.0);
+    final activePaths = context.read<DrawBloc>().state.backgroundPaths;
+    final baseSize = CanvasPainter.getCanvasBaseSize(activePaths);
 
     final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
     final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
@@ -571,6 +835,27 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     final double dx = (unzoomed.dx - drawRect.left) * (baseSize.width / drawRect.width);
     final double dy = (unzoomed.dy - drawRect.top) * (baseSize.height / drawRect.height);
     return Offset(dx, dy);
+  }
+
+  // Преобразование координат холста в экранные координаты (для точного хит-тестирования маркеров)
+  Offset _canvasToScreen(Offset canvasOffset) {
+    final activePaths = context.read<DrawBloc>().state.backgroundPaths;
+    final baseSize = CanvasPainter.getCanvasBaseSize(activePaths);
+
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
+
+    final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
+
+    // 1. Преобразование из canvas-пространства в contain-бокс drawRect
+    final double xInDraw = canvasOffset.dx * (drawRect.width / baseSize.width) + drawRect.left;
+    final double yInDraw = canvasOffset.dy * (drawRect.height / baseSize.height) + drawRect.top;
+
+    // 2. Применение масштаба и сдвига Zoom/Pan
+    final double screenX = xInDraw * _scale + _offset.dx;
+    final double screenY = yInDraw * _scale + _offset.dy;
+
+    return Offset(screenX, screenY);
   }
 
   void _eraseAtPoint(Offset canvasPoint, double eraserRadius) {
@@ -696,7 +981,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
     if (_isZooming) return; // Во время масштабирования не рисуем
 
-    final localPosition = _screenToCanvas(event.localPosition);
+    final rawCanvasPt = _screenToCanvas(event.localPosition);
+    final schemeInfo = _getSchemeInfo(rawCanvasPt, state.backgroundPaths);
+    final targetPath = schemeInfo.targetSchemePath;
+    final localPosition = schemeInfo.localPoint;
     final id = _generateId();
 
     // Проверяем, не кликнули ли мы по кнопке удаления выделенного объекта
@@ -706,25 +994,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         selectedAction = state.history.firstWhere((a) => a.id == _selectedActionId);
       } catch (_) {}
       if (selectedAction != null) {
-        final bounds = CanvasPainter.getActionBounds(selectedAction);
-        if (bounds != Rect.zero) {
-          final bgImage = widget.backgroundImage ?? _loadedBackgroundImage;
-          final baseSize = bgImage != null
-              ? Size(bgImage.width.toDouble(), bgImage.height.toDouble())
-              : const Size(800.0, 600.0);
-          final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-          final containerSize = renderBox?.size ?? const Size(800.0, 600.0);
-          final drawRect = CanvasPainter.getDrawRect(containerSize, baseSize);
-          final double drawScaleX = drawRect.width / baseSize.width;
-          final double drawScaleY = drawRect.height / baseSize.height;
+        final originalBounds = CanvasPainter.getOriginalActionBounds(selectedAction);
+        if (originalBounds != Rect.zero) {
+          final scaleY = selectedAction.scaleY.abs() == 0 ? 1.0 : selectedAction.scaleY.abs();
+          final localDeletePt = Offset(originalBounds.center.dx, originalBounds.bottom + (25.0 / scaleY));
+          final deleteCanvasPt = CanvasPainter.getTransformedActionPoint(selectedAction, localDeletePt);
+          final deleteScreenPt = _canvasToScreen(_schemeToCanvasSpace(deleteCanvasPt, selectedAction.targetSchemePath));
 
-          final screenLeft = (bounds.left * drawScaleX + drawRect.left) * _scale + _offset.dx;
-          final screenTop = (bounds.top * drawScaleY + drawRect.top) * _scale + _offset.dy;
-          final screenRight = (bounds.right * drawScaleX + drawRect.left) * _scale + _offset.dx;
-          final buttonY = (screenTop - 44.0).clamp(4.0, double.infinity);
-          final buttonX = (screenLeft + screenRight) / 2 - 20;
-          final buttonCenter = Offset(buttonX + 20, buttonY + 20);
-          if ((event.localPosition - buttonCenter).distance < 25.0) {
+          if ((event.localPosition - deleteScreenPt).distance < 25.0) {
             // Клик по кнопке удаления — игнорируем здесь, чтобы сработал InkWell кнопки
             return;
           }
@@ -741,21 +1018,32 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         } catch (_) {}
 
         if (selectedAction != null) {
-          final bounds = CanvasPainter.getActionBounds(selectedAction);
-          final threshold = 30.0; // Fix #10: увеличенная зона чувствительности клика по маркеру
+          final originalBounds = CanvasPainter.getOriginalActionBounds(selectedAction);
+          const double threshold = 32.0; // экранные пиксели — не зависит от зума
 
-          final corners = {
-            'topLeft': bounds.topLeft,
-            'topRight': bounds.topRight,
-            'bottomLeft': bounds.bottomLeft,
-            'bottomRight': bounds.bottomRight,
-          };
+          final scaleY = selectedAction.scaleY.abs() == 0 ? 1.0 : selectedAction.scaleY.abs();
+          final rotationLocalPt = Offset(originalBounds.center.dx, originalBounds.top - (30.0 / scaleY));
+          final rotationCanvasPt = _schemeToCanvasSpace(CanvasPainter.getTransformedActionPoint(selectedAction, rotationLocalPt), selectedAction.targetSchemePath);
+          final rotationScreenPt = _canvasToScreen(rotationCanvasPt);
 
           String? hitHandle;
-          for (final entry in corners.entries) {
-            if ((localPosition - entry.value).distance < threshold) {
-              hitHandle = entry.key;
-              break;
+
+          if ((event.localPosition - rotationScreenPt).distance < threshold) {
+            hitHandle = 'rotation';
+          } else {
+            final cornersLocal = <String, Offset>{
+              'topLeft': originalBounds.topLeft,
+              'topRight': originalBounds.topRight,
+              'bottomLeft': originalBounds.bottomLeft,
+              'bottomRight': originalBounds.bottomRight,
+            };
+            for (final entry in cornersLocal.entries) {
+              final canvasPt = _schemeToCanvasSpace(CanvasPainter.getTransformedActionPoint(selectedAction, entry.value), selectedAction.targetSchemePath);
+              final screenPt = _canvasToScreen(canvasPt);
+              if ((event.localPosition - screenPt).distance < threshold) {
+                hitHandle = entry.key;
+                break;
+              }
             }
           }
 
@@ -766,6 +1054,66 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               _originalActionForDrag = selectedAction;
               _activeAction = selectedAction;
             });
+
+            // Инициализируем данные для Paint-like resize (не нужно для rotation-handle)
+            if (hitHandle != 'rotation') {
+              final action = selectedAction!;
+              final origBounds = CanvasPainter.getOriginalActionBounds(action);
+
+              // Определяем захваченный и anchor углы в LOCAL пространстве
+              final Offset draggedLocal;
+              final Offset anchorLocal;
+              switch (hitHandle) {
+                case 'topLeft':
+                  draggedLocal = origBounds.topLeft;
+                  anchorLocal = origBounds.bottomRight;
+                case 'topRight':
+                  draggedLocal = origBounds.topRight;
+                  anchorLocal = origBounds.bottomLeft;
+                case 'bottomLeft':
+                  draggedLocal = origBounds.bottomLeft;
+                  anchorLocal = origBounds.topRight;
+                default: // bottomRight
+                  draggedLocal = origBounds.bottomRight;
+                  anchorLocal = origBounds.topLeft;
+              }
+
+              // Вычисляем угол вращения и центр вращения
+              double rotation = 0.0;
+              Offset rotCenter = origBounds.center;
+              if (action is ShapeAction) {
+                rotation = action.rotation;
+                rotCenter = Rect.fromPoints(action.startPoint, action.endPoint).center;
+              } else if (action is StampAction) {
+                rotation = action.rotation;
+                rotCenter = action.position;
+              }
+
+              // Вспомогательная функция вращения точки вокруг центра
+              Offset rotatePoint(Offset p, Offset center, double angle) {
+                if (angle == 0.0) return p;
+                final dx = p.dx - center.dx;
+                final dy = p.dy - center.dy;
+                final c = math.cos(angle);
+                final s = math.sin(angle);
+                return Offset(center.dx + dx * c - dy * s, center.dy + dx * s + dy * c);
+              }
+
+              // A и B — "пред-scale" позиции (после вращения, до scale+offset)
+              final a = rotatePoint(draggedLocal, rotCenter, rotation);
+              final b = rotatePoint(anchorLocal, rotCenter, rotation);
+
+              // Anchor в canvas-пространстве (без cellOffset)
+              final sx = action.scaleX == 0 ? 1.0 : action.scaleX;
+              final sy = action.scaleY == 0 ? 1.0 : action.scaleY;
+              final anchorCv = Offset(b.dx * sx + action.offsetX, b.dy * sy + action.offsetY);
+
+              setState(() {
+                _rotatedDraggedCorner = a;
+                _rotatedAnchorCorner = b;
+                _anchorCanvas = anchorCv;
+              });
+            }
             return;
           }
         }
@@ -775,7 +1123,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       DrawAction? hitAction;
       double minHitDistance = double.infinity;
       for (final action in state.history.reversed) {
-        final localObjPos = _canvasToObjectSpace(localPosition, action);
+        if (action.targetSchemePath != null && !state.backgroundPaths.contains(action.targetSchemePath)) {
+          continue; // Игнорируем действия от выключенных схем
+        }
+        final localObjPos = _canvasToObjectSpace(rawCanvasPt, action);
         final dist = _getDistanceToAction(localObjPos, action);
         final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
         final screenDist = dist * avgScale;
@@ -788,10 +1139,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
       setState(() {
         _draggedHandle = null;
+        _rotatedDraggedCorner = null;
+        _rotatedAnchorCorner = null;
+        _anchorCanvas = null;
         if (hitAction != null) {
           _selectedActionId = hitAction.id;
           widget.selectedActionIdNotifier?.value = hitAction.id;
-          _dragStartPoint = localPosition;
+          _dragStartPoint = _getSchemeLocalPosition(rawCanvasPt, hitAction.targetSchemePath);
           _originalActionForDrag = hitAction;
           _activeAction = hitAction;
         } else {
@@ -815,15 +1169,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         _initialHistoryBeforeErase = List<DrawAction>.from(state.history);
         _hasErasedAnything = false;
         _eraserCursorPosition = event.localPosition;
-        _currentPoints = [localPosition];
+        _currentPoints = [rawCanvasPt];
       });
-      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2);
+      _eraseAtPoint(rawCanvasPt, state.currentStrokeWidth / 2);
       return;
     }
 
-    // Fix #15: фиксируем толщину линии ОДИН РАЗ при нажатии.
-    // Пересчёт в каждом onPointerMove приводил к прыжкам ширины
-    // (финальная толщина штриха определялась последним событием Move).
     final double pressure = event.pressure;
     _activeStrokeWidth =
         state.currentStrokeWidth * (pressure > 0.0 ? (0.5 + pressure) : 1.0);
@@ -846,10 +1197,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               : state.currentTool == ToolType.fibrosis
                   ? 'fibrosis'
                   : 'pencil',
+          isDashed: state.currentTool == ToolType.pencil ? state.currentLineDashed : false,
+          targetSchemePath: targetPath,
         );
       } else if (state.currentTool == ToolType.endometrioma ||
           state.currentTool == ToolType.myoma ||
-          state.currentTool == ToolType.infiltrate) {
+          state.currentTool == ToolType.infiltrate ||
+          state.currentTool == ToolType.bowelInfiltrate ||
+          state.currentTool == ToolType.adenomyosis ||
+          state.currentTool == ToolType.gui) {
         // Овал (фигуры)
         _activeAction = ShapeAction(
           id: id,
@@ -861,12 +1217,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               ? 'endometrioma'
               : state.currentTool == ToolType.myoma
                   ? 'myoma'
-                  : 'infiltrate',
+                  : state.currentTool == ToolType.infiltrate
+                      ? 'infiltrate'
+                      : state.currentTool == ToolType.bowelInfiltrate
+                          ? 'bowelInfiltrate'
+                          : state.currentTool == ToolType.gui
+                              ? 'gui'
+                              : 'adenomyosis',
           figoType: state.currentTool == ToolType.myoma ? state.currentFigoType : null,
+          targetSchemePath: targetPath,
         );
       } else if (state.currentTool == ToolType.iud ||
           state.currentTool == ToolType.foci ||
-          state.currentTool == ToolType.customStamp) {
+          state.currentTool == ToolType.customStamp ||
+          state.currentTool == ToolType.follicle ||
+          state.currentTool == ToolType.polyp) {
         // Штампы срабатывают мгновенно при нажатии
         if (state.currentTool == ToolType.customStamp && state.customStampPath == null) {
           return;
@@ -878,12 +1243,18 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           position: localPosition,
           stampType: state.currentTool == ToolType.customStamp
               ? 'custom'
-              : (state.currentTool == ToolType.iud ? 'iud' : 'foci'),
+              : state.currentTool == ToolType.iud
+                  ? 'iud'
+                  : state.currentTool == ToolType.foci
+                      ? 'foci'
+                      : state.currentTool == ToolType.follicle
+                          ? 'follicle'
+                          : 'polyp',
           customStampPath: state.currentTool == ToolType.customStamp ? state.customStampPath : null,
+          targetSchemePath: targetPath,
         );
         context.read<DrawBloc>().add(AddActionEvent(stampAction));
 
-        // Просто завершаем рисование
         setState(() {
           _activeAction = null;
         });
@@ -897,6 +1268,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           endPoint: localPosition,
           text: '',
           isDashed: state.currentLineDashed,
+          targetSchemePath: targetPath,
         );
       }
     });
@@ -909,15 +1281,17 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (_isZooming) return;
 
     final state = context.read<DrawBloc>().state;
-    final localPosition = _screenToCanvas(event.localPosition);
+    final rawCanvasPt = _screenToCanvas(event.localPosition);
+    final targetPath = _activeAction?.targetSchemePath;
+    final localPosition = _getSchemeLocalPosition(rawCanvasPt, targetPath);
 
     // Ластик: отслеживаем точки и позицию курсора
     if (state.currentTool == ToolType.eraser) {
       setState(() {
         _eraserCursorPosition = event.localPosition;
-        _currentPoints.add(localPosition);
+        _currentPoints.add(rawCanvasPt);
       });
-      _eraseAtPoint(localPosition, state.currentStrokeWidth / 2);
+      _eraseAtPoint(rawCanvasPt, state.currentStrokeWidth / 2);
       return;
     }
 
@@ -928,30 +1302,105 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         final offset = localPosition - _dragStartPoint!;
         setState(() {
           if (_draggedHandle != null) {
-            // Используем оригинальные bounds объекта (до начала изменения размера)
-            final originalUnscaled = CanvasPainter.getOriginalActionBounds(_originalActionForDrag!);
-            // Текущие rendered-bounds (с учётом всех трансформаций)
+            // Текущие rendered-bounds (с учётом всех трансформаций) — нужны только для вращения
             final currentBounds = CanvasPainter.getActionBounds(_originalActionForDrag!);
-            double left = currentBounds.left;
-            double top = currentBounds.top;
-            double right = currentBounds.right;
-            double bottom = currentBounds.bottom;
 
-            if (_draggedHandle == 'topLeft') {
-              left = currentBounds.left + offset.dx;
-              top = currentBounds.top + offset.dy;
-            } else if (_draggedHandle == 'topRight') {
-              right = currentBounds.right + offset.dx;
-              top = currentBounds.top + offset.dy;
-            } else if (_draggedHandle == 'bottomLeft') {
-              left = currentBounds.left + offset.dx;
-              bottom = currentBounds.bottom + offset.dy;
-            } else if (_draggedHandle == 'bottomRight') {
-              right = currentBounds.right + offset.dx;
-              bottom = currentBounds.bottom + offset.dy;
+            if (_draggedHandle == 'rotation') {
+              final center = currentBounds.center;
+              final double currentAngle = math.atan2(
+                localPosition.dy - center.dy,
+                localPosition.dx - center.dx,
+              );
+              final double newRotation = currentAngle + math.pi / 2;
+
+              if (_originalActionForDrag is ShapeAction) {
+                final shape = _originalActionForDrag as ShapeAction;
+                _activeAction = ShapeAction(
+                  id: shape.id,
+                  color: shape.color,
+                  strokeWidth: shape.strokeWidth,
+                  startPoint: shape.startPoint,
+                  endPoint: shape.endPoint,
+                  shapeType: shape.shapeType,
+                  figoType: shape.figoType,
+                  rotation: newRotation,
+                  scaleX: shape.scaleX,
+                  scaleY: shape.scaleY,
+                  offsetX: shape.offsetX,
+                  offsetY: shape.offsetY,
+                  targetSchemePath: shape.targetSchemePath,
+                );
+              } else if (_originalActionForDrag is StampAction) {
+                final stamp = _originalActionForDrag as StampAction;
+                _activeAction = StampAction(
+                  id: stamp.id,
+                  color: stamp.color,
+                  strokeWidth: stamp.strokeWidth,
+                  position: stamp.position,
+                  stampType: stamp.stampType,
+                  customStampPath: stamp.customStampPath,
+                  rotation: newRotation,
+                  scaleX: stamp.scaleX,
+                  scaleY: stamp.scaleY,
+                  offsetX: stamp.offsetX,
+                  offsetY: stamp.offsetY,
+                  targetSchemePath: stamp.targetSchemePath,
+                );
+              }
+            } else {
+              // Paint-like resize: используем предвычисленные A, B, anchorCanvas из _onPointerDown.
+              //
+              // Прямое преобразование: canvas = rotate(local, rotCenter, angle) * scale + offset
+              // Угол вращения фиксирован. Нужно найти новые scaleX, scaleY, offsetX, offsetY.
+              //
+              // Система уравнений (cursor следует захваченному углу, anchor неподвижен):
+              //   cursor  = A * (newScaleX, newScaleY) + (newOffsetX, newOffsetY)
+              //   anchor  = B * (newScaleX, newScaleY) + (newOffsetX, newOffsetY)
+              // Откуда: newScaleX = (cursor.dx - anchor.dx) / (A.dx - B.dx)
+              //         newScaleY = (cursor.dy - anchor.dy) / (A.dy - B.dy)
+              //         newOffsetX = anchor.dx - B.dx * newScaleX
+              //         newOffsetY = anchor.dy - B.dy * newScaleY
+              if (_rotatedDraggedCorner != null && _rotatedAnchorCorner != null && _anchorCanvas != null) {
+                final action = _originalActionForDrag!;
+                final a = _rotatedDraggedCorner!;
+                final b = _rotatedAnchorCorner!;
+                final anchor = _anchorCanvas!;
+
+                // cursorCanvas = localPosition (cell offset уже вычтен одинаково с anchorCanvas)
+                final cursor = localPosition;
+
+                const double minScale = 0.05;
+                const double eps = 1e-6;
+
+                // newScaleX
+                final double denomX = a.dx - b.dx;
+                double newScaleX = denomX.abs() < eps
+                    ? (action.scaleX == 0 ? 1.0 : action.scaleX) // ось вырождена — сохраняем текущий scale
+                    : (cursor.dx - anchor.dx) / denomX;
+                newScaleX = newScaleX.clamp(minScale, double.infinity);
+
+                // newScaleY
+                final double denomY = a.dy - b.dy;
+                double newScaleY = denomY.abs() < eps
+                    ? (action.scaleY == 0 ? 1.0 : action.scaleY)
+                    : (cursor.dy - anchor.dy) / denomY;
+                newScaleY = newScaleY.clamp(minScale, double.infinity);
+
+                // Для кругов (endometrioma, myoma) — пропорциональный scale
+                if (action is ShapeAction &&
+                    (action.shapeType == 'endometrioma' || action.shapeType == 'myoma')) {
+                  final avg = (newScaleX + newScaleY) / 2;
+                  newScaleX = avg;
+                  newScaleY = avg;
+                }
+
+                // Offset так, чтобы anchor остался неподвижным
+                final double newOffsetX = anchor.dx - b.dx * newScaleX;
+                final double newOffsetY = anchor.dy - b.dy * newScaleY;
+
+                _activeAction = _applyScaleAndOffset(action, newScaleX, newScaleY, newOffsetX, newOffsetY);
+              }
             }
-            final newRect = Rect.fromLTRB(left, top, right, bottom);
-            _activeAction = _resizeAction(_originalActionForDrag!, originalUnscaled, newRect);
           } else {
             _activeAction = _offsetAction(_originalActionForDrag!, offset);
           }
@@ -973,6 +1422,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           points: List<Offset>.from(_currentPoints),
           isEraser: false,
           brushType: (_activeAction as StrokeAction).brushType,
+          isDashed: (_activeAction as StrokeAction).isDashed,
+          targetSchemePath: _activeAction!.targetSchemePath,
         );
       } else if (_activeAction is ShapeAction) {
         final shape = _activeAction as ShapeAction;
@@ -984,6 +1435,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           endPoint: localPosition,
           shapeType: shape.shapeType,
           figoType: shape.figoType,
+          rotation: shape.rotation,
+          targetSchemePath: shape.targetSchemePath,
         );
       } else if (_activeAction is TextAction) {
         final text = _activeAction as TextAction;
@@ -995,6 +1448,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           endPoint: localPosition,
           text: text.text,
           isDashed: text.isDashed,
+          targetSchemePath: text.targetSchemePath,
         );
       }
     });
@@ -1045,6 +1499,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           _originalActionForDrag = _activeAction;
           _activeAction = null;
           _draggedHandle = null;
+          _rotatedDraggedCorner = null;
+          _rotatedAnchorCorner = null;
+          _anchorCanvas = null;
         });
       }
       return;
@@ -1063,6 +1520,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             endPoint: oldTextAction.endPoint,
             text: text,
             isDashed: oldTextAction.isDashed,
+            targetSchemePath: oldTextAction.targetSchemePath,
           );
           drawBloc.add(AddActionEvent(finalAction));
 
@@ -1076,7 +1534,33 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         }
       });
     } else {
-      final finalAction = _activeAction!;
+      var finalAction = _activeAction!;
+      if (finalAction is ShapeAction) {
+        final shape = finalAction;
+        if ((shape.endPoint - shape.startPoint).distance < 5.0) {
+          final defaultW = shape.shapeType == 'gui'
+              ? 60.0
+              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate'
+                  ? 80.0
+                  : 40.0);
+          final defaultH = shape.shapeType == 'gui'
+              ? 36.0
+              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate'
+                  ? 50.0
+                  : 40.0);
+          finalAction = ShapeAction(
+            id: shape.id,
+            color: shape.color,
+            strokeWidth: shape.strokeWidth,
+            startPoint: shape.startPoint - Offset(defaultW / 2, defaultH / 2),
+            endPoint: shape.startPoint + Offset(defaultW / 2, defaultH / 2),
+            shapeType: shape.shapeType,
+            figoType: shape.figoType,
+            rotation: shape.rotation,
+            targetSchemePath: shape.targetSchemePath,
+          );
+        }
+      }
       context.read<DrawBloc>().add(AddActionEvent(finalAction));
 
       setState(() {
@@ -1124,7 +1608,25 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
   void _onScaleStart(ScaleStartDetails details) {
     final drawState = context.read<DrawBloc>().state;
-    if (_activeAction != null || drawState.currentTool == ToolType.eraser) return;
+    if (drawState.currentTool == ToolType.eraser) return;
+
+    // Поворот фигуры доступен только при жесте двумя пальцами (pinch/rotate)
+    if (drawState.currentTool == ToolType.move && _selectedActionId != null && _activePointers.length >= 2) {
+      try {
+        final action = drawState.history.firstWhere((a) => a.id == _selectedActionId);
+        if (action is ShapeAction) {
+          setState(() {
+            _originalActionForDrag = action;
+            _dragStartRotation = action.rotation;
+            _isZooming = false;
+            _activeAction = action;
+          });
+          return;
+        }
+      } catch (_) {}
+    }
+
+    if (_activeAction != null) return;
     setState(() {
       _isZooming = true;
       _previousScale = _scale;
@@ -1133,6 +1635,32 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    final drawState = context.read<DrawBloc>().state;
+    if (drawState.currentTool == ToolType.move &&
+        _selectedActionId != null &&
+        _originalActionForDrag is ShapeAction &&
+        _activePointers.length >= 2) {
+      final original = _originalActionForDrag as ShapeAction;
+      setState(() {
+        final newRotation = _dragStartRotation + details.rotation;
+        _activeAction = ShapeAction(
+          id: original.id,
+          color: original.color,
+          strokeWidth: original.strokeWidth,
+          startPoint: original.startPoint,
+          endPoint: original.endPoint,
+          shapeType: original.shapeType,
+          figoType: original.figoType,
+          rotation: newRotation,
+          scaleX: original.scaleX,
+          scaleY: original.scaleY,
+          offsetX: original.offsetX,
+          offsetY: original.offsetY,
+        );
+      });
+      return;
+    }
+
     if (!_isZooming) return;
     setState(() {
       _scale = (_previousScale * details.scale).clamp(0.2, 8.0);
@@ -1142,6 +1670,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    // Завершаем поворот, только если мы были в режиме поворота фигуры (было 2+ пальца)
+    if (_originalActionForDrag is ShapeAction && _activeAction != null && (_activeAction as ShapeAction).rotation != _dragStartRotation) {
+      context.read<DrawBloc>().add(UpdateActionEvent(_activeAction!));
+      setState(() {
+        _originalActionForDrag = _activeAction;
+        _activeAction = null;
+      });
+    }
     setState(() {
       _isZooming = false;
     });
@@ -1200,10 +1736,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       case ToolType.endometrioma:
       case ToolType.myoma:
       case ToolType.infiltrate:
+      case ToolType.bowelInfiltrate:
         return SystemMouseCursors.precise;
       case ToolType.iud:
       case ToolType.foci:
       case ToolType.customStamp:
+      case ToolType.gui:
+      case ToolType.follicle:
+      case ToolType.adenomyosis:
+      case ToolType.polyp:
         return SystemMouseCursors.click;
     }
   }

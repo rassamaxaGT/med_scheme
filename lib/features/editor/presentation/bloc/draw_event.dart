@@ -1,4 +1,5 @@
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import 'dart:ui';
 
 abstract class DrawEvent {}
@@ -16,6 +17,27 @@ class UpdateActionEvent extends DrawEvent {
 class SetBackgroundEvent extends DrawEvent {
   final String? path;
   SetBackgroundEvent(this.path);
+}
+
+class ToggleSchemeEvent extends DrawEvent {
+  final String schemePath;
+  ToggleSchemeEvent(this.schemePath);
+}
+
+class AddCustomSchemeEvent extends DrawEvent {
+  final String path;
+  final String? customTitle;
+  AddCustomSchemeEvent(this.path, {this.customTitle});
+}
+
+class RemoveCustomSchemeEvent extends DrawEvent {
+  final String path;
+  RemoveCustomSchemeEvent(this.path);
+}
+
+class SetBackgroundPathsEvent extends DrawEvent {
+  final List<String> paths;
+  SetBackgroundPathsEvent(this.paths);
 }
 
 class UndoEvent extends DrawEvent {}
@@ -54,6 +76,7 @@ class SetPatientIdEvent extends DrawEvent {
   SetPatientIdEvent(this.patientId);
 }
 
+@Deprecated('FIGO classification was removed in v2.0 specification')
 class ChangeFigoTypeEvent extends DrawEvent {
   final String figoType;
   ChangeFigoTypeEvent(this.figoType);
@@ -85,9 +108,41 @@ class SaveUndoStateEvent extends DrawEvent {
 }
 
 class SetFullStateEvent extends DrawEvent {
-  final List<DrawAction> history;
+  final List<DrawAction>? history;
   final String patientId;
   final String? backgroundPath;
-  SetFullStateEvent({required this.history, required this.patientId, this.backgroundPath});
+  final List<PageData>? pages;
+  final int? currentPageIndex;
+
+  SetFullStateEvent({
+    this.history,
+    required this.patientId,
+    this.backgroundPath,
+    this.pages,
+    this.currentPageIndex,
+  });
 }
 
+// ── События мультистраничности ──────────────────────────────────────────
+
+class SwitchPageEvent extends DrawEvent {
+  final int pageIndex;
+  SwitchPageEvent(this.pageIndex);
+}
+
+class AddPageEvent extends DrawEvent {
+  final String pageType; // 'pelvis', 'uterus', 'custom'
+  final String? title;
+  final String? backgroundPath;
+
+  AddPageEvent({
+    this.pageType = 'custom',
+    this.title,
+    this.backgroundPath,
+  });
+}
+
+class RemovePageEvent extends DrawEvent {
+  final int pageIndex;
+  RemovePageEvent(this.pageIndex);
+}

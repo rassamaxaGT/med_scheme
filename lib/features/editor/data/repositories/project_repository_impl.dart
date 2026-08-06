@@ -8,11 +8,13 @@ import 'package:archive/archive_io.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
 import '../../domain/repositories/project_repository.dart';
 
 import '../models/draw_action_model.dart';
+import '../models/page_data_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../../presentation/widgets/canvas/canvas_painter.dart';
@@ -111,15 +113,16 @@ class ProjectRepositoryImpl implements ProjectRepository {
   Future<void> saveProject({
     required String directoryPath,
     required String projectName,
-    required List<DrawAction> actions,
-    required String? backgroundPath,
+    required List<PageData> pages,
     required String? patientId,
   }) async {
+    final firstBg = pages.isNotEmpty ? pages.first.backgroundPath : null;
     final Map<String, dynamic> projectMap = {
       'projectName': projectName,
       'version': '3.0',
       'patientId': patientId,
-      'actions': actions.map((a) => DrawActionModel.toJson(a)).toList(),
+      'pages': pages.map((p) => PageDataModel.toJson(p)).toList(),
+      'actions': pages.isNotEmpty ? pages.first.history.map((a) => DrawActionModel.toJson(a)).toList() : [],
     };
 
     final jsonContent = jsonEncode(projectMap);
@@ -135,7 +138,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
     }
 
     // Запускаем архивацию в фоновом изоляте с помощью compute, чтобы не фризить UI
-    final taskData = ZipTaskData(outputPath, jsonContent, backgroundPath);
+    final taskData = ZipTaskData(outputPath, jsonContent, firstBg);
     await compute(_zipProjectTask, taskData);
 
     // На Android копируем готовый файл во внешнюю директорию SAF
@@ -188,13 +191,42 @@ class ProjectRepositoryImpl implements ProjectRepository {
     }
 
     final decoded = jsonDecode(result.jsonContent) as Map<String, dynamic>;
-    final actionsList = decoded['actions'] as List;
     final patientId = decoded['patientId'] as String?;
 
-    final actions = actionsList.map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>)).toList();
+    List<PageData> pages = [];
+    if (decoded.containsKey('pages') && decoded['pages'] is List) {
+      final pagesList = decoded['pages'] as List;
+      pages = pagesList
+          .map((j) => PageDataModel.fromJson(j as Map<String, dynamic>))
+          .toList();
+    } else if (decoded.containsKey('actions') && decoded['actions'] is List) {
+      // Обратная совместимость с версией 1.0/2.0
+      final actionsList = decoded['actions'] as List;
+      final actions = actionsList
+          .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+      pages = [
+        PageData(
+          id: 'page_legacy',
+          pageType: 'custom',
+          title: 'Схема',
+          backgroundPath: result.extractedBackgroundPath,
+          history: actions,
+        ),
+      ];
+    } else {
+      pages = [
+        PageData(
+          id: 'page_default',
+          pageType: 'custom',
+          title: 'Схема',
+          backgroundPath: result.extractedBackgroundPath,
+        ),
+      ];
+    }
+
     return ProjectData(
-      actions: actions,
-      backgroundPath: result.extractedBackgroundPath,
+      pages: pages,
       patientId: patientId,
     );
   }
@@ -231,6 +263,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
     final painter = CanvasPainter(
       history: actions,
       backgroundImage: bgImage,
+      backgroundPath: backgroundPath,
       patientId: patientId,
     );
     painter.paint(canvas, size);
@@ -306,6 +339,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
     final painter = CanvasPainter(
       history: actions,
       backgroundImage: bgImage,
+      backgroundPath: backgroundPath,
       patientId: patientId,
     );
     painter.paint(canvas, size);

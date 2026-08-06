@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
 import '../../domain/repositories/project_repository.dart';
@@ -14,14 +15,12 @@ class RequestDirectoryEvent extends ProjectEvent {}
 
 class SaveProjectEvent extends ProjectEvent {
   final String projectName;
-  final List<DrawAction> actions;
-  final String? backgroundPath;
+  final List<PageData> pages;
   final String? patientId;
 
   SaveProjectEvent({
     required this.projectName,
-    required this.actions,
-    this.backgroundPath,
+    required this.pages,
     this.patientId,
   });
 }
@@ -74,11 +73,14 @@ class ProjectDirectorySelected extends ProjectState {
 class ProjectLoading extends ProjectState {}
 
 class ProjectLoaded extends ProjectState {
-  final List<DrawAction> actions;
-  final String? backgroundPath;
+  final ProjectData projectData;
   final String filePath;
-  final String? patientId;
-  ProjectLoaded(this.actions, this.backgroundPath, this.filePath, this.patientId);
+
+  ProjectLoaded(this.projectData, this.filePath);
+
+  List<DrawAction> get actions => projectData.actions;
+  String? get backgroundPath => projectData.backgroundPath;
+  String? get patientId => projectData.patientId;
 }
 
 class ProjectSaved extends ProjectState {
@@ -143,14 +145,12 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
         await projectRepository.saveProject(
           directoryPath: _selectedDirectoryPath!,
           projectName: event.projectName,
-          actions: event.actions,
-          backgroundPath: event.backgroundPath,
+          pages: event.pages,
           patientId: event.patientId,
         );
         final filePath = '$_selectedDirectoryPath/${event.projectName}.meddraw';
         currentProjectFilePath = filePath;
         emit(ProjectSaved(filePath));
-        // Возвращаем состояние выбранной папки
         emit(ProjectDirectorySelected(_selectedDirectoryPath!));
       } catch (e) {
         emit(ProjectError('Ошибка сохранения проекта: $e'));
@@ -172,7 +172,6 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
           patientId: event.patientId,
         );
         emit(ProjectExported(outputPath));
-        // Возвращаем состояние выбранной папки
         emit(ProjectDirectorySelected(_selectedDirectoryPath!));
       } catch (e) {
         emit(ProjectError('Ошибка экспорта: $e'));
@@ -194,7 +193,6 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
           patientId: event.patientId,
         );
         emit(ProjectExported(outputPath));
-        // Возвращаем состояние выбранной папки
         emit(ProjectDirectorySelected(_selectedDirectoryPath!));
       } catch (e) {
         emit(ProjectError('Ошибка экспорта в PDF: $e'));
@@ -207,11 +205,10 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
         final ProjectData projectData = await projectRepository.loadProject(event.source);
         final path = event.source.path ?? event.source.name;
         currentProjectFilePath = path;
-        emit(ProjectLoaded(projectData.actions, projectData.backgroundPath, path, projectData.patientId));
+        emit(ProjectLoaded(projectData, path));
       } catch (e) {
         emit(ProjectError('Ошибка загрузки проекта: $e'));
       }
     });
-
   }
 }

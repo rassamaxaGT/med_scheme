@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/draw_action.dart';
+import '../../domain/entities/page_data.dart';
 import 'draw_event.dart';
 import 'draw_state.dart';
 
@@ -48,8 +49,53 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       if (event.path == null) {
         emit(state.copyWith(clearBackground: true));
       } else {
-        emit(state.copyWith(backgroundPath: event.path));
+        emit(state.copyWith(backgroundPaths: [event.path!]));
       }
+    });
+
+    on<ToggleSchemeEvent>((event, emit) {
+      final currentPaths = List<String>.from(state.backgroundPaths);
+      if (currentPaths.contains(event.schemePath)) {
+        currentPaths.remove(event.schemePath);
+      } else {
+        currentPaths.add(event.schemePath);
+      }
+      emit(state.copyWith(backgroundPaths: currentPaths));
+    });
+
+    on<AddCustomSchemeEvent>((event, emit) {
+      final updatedCustom = List<CustomSchemeItem>.from(state.customSchemes);
+      final nextNumber = updatedCustom.length + 1;
+      final title = event.customTitle ?? 'Своё изображение $nextNumber';
+      final item = CustomSchemeItem(title: title, path: event.path);
+      updatedCustom.add(item);
+
+      final currentBgPaths = List<String>.from(state.backgroundPaths);
+      if (!currentBgPaths.contains(event.path)) {
+        currentBgPaths.add(event.path);
+      }
+
+      emit(state.copyWith(
+        customSchemes: updatedCustom,
+        backgroundPaths: currentBgPaths,
+      ));
+    });
+
+    on<RemoveCustomSchemeEvent>((event, emit) {
+      final updatedCustom = List<CustomSchemeItem>.from(state.customSchemes)
+        ..removeWhere((item) => item.path == event.path);
+
+      final currentBgPaths = List<String>.from(state.backgroundPaths)
+        ..remove(event.path);
+
+      emit(state.copyWith(
+        customSchemes: updatedCustom,
+        backgroundPaths: currentBgPaths,
+      ));
+    });
+
+    on<SetBackgroundPathsEvent>((event, emit) {
+      emit(state.copyWith(backgroundPaths: event.paths));
     });
 
     // ── Undo ──────────────────────────────────────────────────────────────
@@ -96,9 +142,22 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
 
     on<SelectToolEvent>((event, emit) {
       final defaultColor = _getColorForTool(event.tool, state.currentFigoType);
+      double strokeWidth = state.currentStrokeWidth;
+      if (event.tool == ToolType.fibrosis) {
+        strokeWidth = 2.0;
+      } else if (event.tool == ToolType.arrow) {
+        strokeWidth = 1.5;
+      } else if (event.tool == ToolType.foci ||
+          event.tool == ToolType.follicle ||
+          event.tool == ToolType.polyp ||
+          event.tool == ToolType.gui ||
+          event.tool == ToolType.customStamp) {
+        strokeWidth = 8.0;
+      }
       emit(state.copyWith(
         currentTool: event.tool,
         currentColor: defaultColor ?? state.currentColor,
+        currentStrokeWidth: strokeWidth,
       ));
     });
 
@@ -125,8 +184,6 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
     });
 
     // ── Загрузить историю из проекта (Fix #2) ─────────────────────────────
-    // При загрузке — ПОЛНОСТЬЮ СБРАСЫВАЕМ оба стека,
-    // чтобы Undo не позволял вернуться к предыдущему проекту.
     on<SetHistoryEvent>((event, emit) {
       emit(state.copyWith(
         history: event.history,
@@ -186,15 +243,81 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       ));
     });
 
-    // ── Установка полного состояния (автосохранение) ──────────────────────
+    // ── Установка полного состояния (автосохранение / загрузка) ─────────
     on<SetFullStateEvent>((event, emit) {
+      if (event.pages != null && event.pages!.isNotEmpty) {
+        emit(state.copyWith(
+          pages: event.pages,
+          currentPageIndex: event.currentPageIndex ?? 0,
+          patientId: event.patientId,
+        ));
+      } else {
+        final singlePage = PageData(
+          id: 'page_1',
+          pageType: 'custom',
+          title: 'Схема',
+          backgroundPath: event.backgroundPath,
+          history: event.history ?? [],
+        );
+        emit(state.copyWith(
+          pages: [singlePage],
+          currentPageIndex: 0,
+          patientId: event.patientId,
+        ));
+      }
+    });
+
+    // ── События мультистраничности ──────────────────────────────────────────
+
+    on<SwitchPageEvent>((event, emit) {
+      if (event.pageIndex >= 0 && event.pageIndex < state.pages.length) {
+        emit(state.copyWith(currentPageIndex: event.pageIndex));
+      }
+    });
+
+    on<AddPageEvent>((event, emit) {
+      final newIndex = state.pages.length;
+      final pageTitle = event.title ??
+          (event.pageType == 'pelvis'
+              ? 'Таз'
+              : event.pageType == 'uterus'
+                  ? 'Матка'
+                  : 'Лист ${newIndex + 1}');
+
+      final defaultBgPaths = event.backgroundPath != null
+          ? [event.backgroundPath!]
+          : (event.pageType == 'pelvis'
+              ? ['assets/schemes/pelvis_ls.png']
+              : (event.pageType == 'uterus'
+                  ? ['assets/schemes/uterus_sagittal.png']
+                  : const <String>[]));
+
+      final newPage = PageData(
+        id: 'page_${DateTime.now().millisecondsSinceEpoch}',
+        pageType: event.pageType,
+        title: pageTitle,
+        backgroundPaths: defaultBgPaths,
+      );
+
+      final updatedPages = List<PageData>.from(state.pages)..add(newPage);
       emit(state.copyWith(
-        history: event.history,
-        patientId: event.patientId,
-        backgroundPath: event.backgroundPath,
-        clearBackground: event.backgroundPath == null,
-        undoStack: [],
-        redoStack: [],
+        pages: updatedPages,
+        currentPageIndex: newIndex,
+      ));
+    });
+
+    on<RemovePageEvent>((event, emit) {
+      if (state.pages.length <= 1) return; // Не удаляем последнюю страницу
+      if (event.pageIndex < 0 || event.pageIndex >= state.pages.length) return;
+
+      final updatedPages = List<PageData>.from(state.pages)..removeAt(event.pageIndex);
+      int newIndex = state.currentPageIndex;
+      if (newIndex >= updatedPages.length) {
+        newIndex = updatedPages.length - 1;
+      }
+      emit(state.copyWith(
+        pages: updatedPages,
+        currentPageIndex: newIndex,
       ));
     });
   }
@@ -202,27 +325,28 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
   Color? _getColorForTool(ToolType tool, String figoType) {
     switch (tool) {
       case ToolType.infiltrate:
-        return const Color(0xFFD32F2F); // Red
-      case ToolType.adhesions:
-        return const Color(0xFF388E3C); // Green
-      case ToolType.endometrioma:
         return const Color(0xFF5C4033); // Brown
+      case ToolType.adhesions:
+        return const Color(0xFF9E9E9E); // Grey
+      case ToolType.endometrioma:
+        return const Color(0xFF8B5A2B); // Brown / Ochre
       case ToolType.myoma:
-        if (figoType == '0' || figoType == '1' || figoType == '2') {
-          return const Color(0xFFE91E63); // Pink
-        } else if (figoType == '3' || figoType == '4') {
-          return const Color(0xFF1976D2); // Blue
-        } else if (figoType == '5' || figoType == '6' || figoType == '7') {
-          return const Color(0xFF388E3C); // Green
-        } else if (figoType == '8') {
-          return const Color(0xFF757575); // Grey
-        } else {
-          return const Color(0xFF9C27B0); // Purple/Hybrid
-        }
+        return const Color(0xFFFF69B4); // Fuchsia / Pink
       case ToolType.foci:
-        return const Color(0xFFFFC107); // Yellow/Amber
+        return const Color(0xFF880E4F); // Cherry / Вишневый
       case ToolType.iud:
-        return const Color(0xFF1976D2); // Blue
+      case ToolType.arrow:
+        return const Color(0xFF000000); // Black
+      case ToolType.bowelInfiltrate:
+        return const Color(0xFF5C4033); // Brown
+      case ToolType.gui:
+        return const Color(0xFF8E24AA); // Purple
+      case ToolType.follicle:
+        return const Color(0xFF03A9F4); // Light Blue
+      case ToolType.adenomyosis:
+        return const Color(0xFF880E4F); // Cherry
+      case ToolType.polyp:
+        return const Color(0xFFFF7043); // Orange/Peach
       default:
         return null;
     }
