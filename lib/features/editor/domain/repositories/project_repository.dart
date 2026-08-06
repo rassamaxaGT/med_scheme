@@ -2,6 +2,7 @@ import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
+import '../../presentation/bloc/draw_state.dart';
 
 abstract class ProjectRepository {
   /// Запрашивает у пользователя папку сохранения проектов (для Android SAF)
@@ -13,6 +14,7 @@ abstract class ProjectRepository {
     required String projectName,
     required List<PageData> pages,
     required String? patientId,
+    List<CustomSchemeItem>? customSchemes,
   });
 
   /// Загружает проект из ZIP-контейнера (.meddraw) и возвращает данные проекта

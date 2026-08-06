@@ -1436,11 +1436,14 @@ class _ToolIconPainter extends CustomPainter {
         
         final path = Path();
         for (int i = 0; i < 12; i++) {
-          final a = i * 3.14159 / 6;
           final r = (radius - 1) * (0.8 + 0.25 * (i % 2 == 0 ? 1 : -1));
           final x = center.dx + 0.85 * r * (i % 3 == 0 ? 1.1 : 0.9);
           final y = center.dy + 0.85 * r * (i % 2 == 0 ? 0.9 : 1.1);
-          if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+          if (i == 0) {
+            path.moveTo(x, y);
+          } else {
+            path.lineTo(x, y);
+          }
         }
         path.close();
         canvas.drawPath(path, outerPaint);

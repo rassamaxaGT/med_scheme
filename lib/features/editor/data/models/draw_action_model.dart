@@ -2,7 +2,16 @@ import 'dart:ui';
 import '../../domain/entities/draw_action.dart';
 
 class DrawActionModel {
-  static Map<String, dynamic> toJson(DrawAction action) {
+  /// [pathRemapping] maps original file paths → archive names (for save)
+  /// or archive names → extracted local paths (for load).
+  static Map<String, dynamic> toJson(DrawAction action,
+      {Map<String, String>? pathRemapping}) {
+    final rawPath = action.targetSchemePath;
+    final mappedPath =
+        (rawPath != null && pathRemapping != null)
+            ? (pathRemapping[rawPath] ?? rawPath)
+            : rawPath;
+
     final baseMap = <String, dynamic>{
       'id': action.id,
       'color': action.color.toARGB32(),
@@ -11,7 +20,7 @@ class DrawActionModel {
       'scaleY': action.scaleY,
       'offsetX': action.offsetX,
       'offsetY': action.offsetY,
-      'targetSchemePath': action.targetSchemePath,
+      'targetSchemePath': mappedPath,
     };
 
     if (action is StrokeAction) {
@@ -55,7 +64,8 @@ class DrawActionModel {
     throw UnimplementedError('Unknown DrawAction subclass: ${action.runtimeType}');
   }
 
-  static DrawAction fromJson(Map<String, dynamic> json) {
+  static DrawAction fromJson(Map<String, dynamic> json,
+      {Map<String, String>? pathRemapping}) {
     final type = json['type'] as String;
     final id = json['id'] as String;
     final color = Color(json['color'] as int);
@@ -64,7 +74,11 @@ class DrawActionModel {
     final scaleY = (json['scaleY'] as num?)?.toDouble() ?? 1.0;
     final offsetX = (json['offsetX'] as num?)?.toDouble() ?? 0.0;
     final offsetY = (json['offsetY'] as num?)?.toDouble() ?? 0.0;
-    final targetSchemePath = json['targetSchemePath'] as String?;
+    final rawPath = json['targetSchemePath'] as String?;
+    final targetSchemePath =
+        (rawPath != null && pathRemapping != null)
+            ? (pathRemapping[rawPath] ?? rawPath)
+            : rawPath;
 
     switch (type) {
       case 'stroke':
@@ -73,7 +87,10 @@ class DrawActionModel {
           color: color,
           strokeWidth: strokeWidth,
           points: (json['points'] as List)
-              .map((p) => Offset((p['x'] as num).toDouble(), (p['y'] as num).toDouble()))
+              .map((p) => Offset(
+                    (p['x'] as num).toDouble(),
+                    (p['y'] as num).toDouble(),
+                  ))
               .toList(),
           isEraser: json['isEraser'] as bool? ?? false,
           brushType: json['brushType'] as String? ?? 'pencil',

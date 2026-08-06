@@ -14,6 +14,7 @@ import '../../domain/entities/project_file_source.dart';
 import '../../domain/repositories/project_repository.dart';
 import '../models/draw_action_model.dart';
 import '../models/page_data_model.dart';
+import '../../presentation/bloc/draw_state.dart';
 import '../../presentation/widgets/canvas/canvas_painter.dart';
 import '../../../../core/utils/web_helper.dart';
 import '../../../../core/utils/image_loader.dart';
@@ -32,14 +33,64 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     required String projectName,
     required List<PageData> pages,
     required String? patientId,
+    List<CustomSchemeItem>? customSchemes,
   }) async {
-    final firstBg = pages.isNotEmpty ? pages.first.backgroundPath : null;
+    final customBgFiles = <String, Uint8List>{};
+    final pathToArchiveMap = <String, String>{};
+    int bgCounter = 0;
+
+    final allCustomPaths = <String>{};
+    for (final p in pages) {
+      for (final path in p.backgroundPaths) {
+        if (!path.startsWith('assets/')) {
+          allCustomPaths.add(path);
+        }
+      }
+    }
+    if (customSchemes != null) {
+      for (final cs in customSchemes) {
+        if (!cs.path.startsWith('assets/')) {
+          allCustomPaths.add(cs.path);
+        }
+      }
+    }
+
+    for (final path in allCustomPaths) {
+      final ext = path.toLowerCase().endsWith('.jpg') || path.toLowerCase().endsWith('.jpeg') ? 'jpg' : 'png';
+      final archiveName = 'custom_bg_$bgCounter.$ext';
+      final bgBytes = getBlobBytes(path);
+      if (bgBytes != null) {
+        customBgFiles[archiveName] = bgBytes;
+        pathToArchiveMap[path] = archiveName;
+        bgCounter++;
+      }
+    }
+
+    final remappedPages = pages.map((p) {
+      final newBgPaths = p.backgroundPaths.map((path) => pathToArchiveMap[path] ?? path).toList();
+      return p.copyWith(backgroundPaths: newBgPaths);
+    }).toList();
+
+    final remappedCustomSchemes = (customSchemes ?? []).map((cs) {
+      return {
+        'title': cs.title,
+        'path': pathToArchiveMap[cs.path] ?? cs.path,
+      };
+    }).toList();
+
     final Map<String, dynamic> projectMap = {
       'projectName': projectName,
       'version': '3.0',
       'patientId': patientId,
-      'pages': pages.map((p) => PageDataModel.toJson(p)).toList(),
-      'actions': pages.isNotEmpty ? pages.first.history.map((a) => DrawActionModel.toJson(a)).toList() : [],
+      'pages': remappedPages
+          .map((p) => PageDataModel.toJson(p, pathRemapping: pathToArchiveMap))
+          .toList(),
+      'customSchemes': remappedCustomSchemes,
+      'actions': remappedPages.isNotEmpty
+          ? remappedPages.first.history
+              .map((a) => DrawActionModel.toJson(a, pathRemapping: pathToArchiveMap))
+              .toList()
+          : [],
     };
 
     final jsonString = jsonEncode(projectMap);
@@ -48,12 +99,9 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     final archive = Archive();
     archive.addFile(ArchiveFile('project.json', jsonBytes.length, jsonBytes));
 
-    if (firstBg != null) {
-      final bgBytes = getBlobBytes(firstBg);
-      if (bgBytes != null) {
-        archive.addFile(ArchiveFile('background.png', bgBytes.length, bgBytes));
-      }
-    }
+    customBgFiles.forEach((archiveName, bytes) {
+      archive.addFile(ArchiveFile(archiveName, bytes.length, bytes));
+    });
 
     final zipBytes = ZipEncoder().encode(archive);
     if (zipBytes != null) {
@@ -70,15 +118,18 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
 
     final archive = ZipDecoder().decodeBytes(bytes);
     String jsonContent = '[]';
-    String? extractedBgPath;
+    final Map<String, String> extractedMap = {};
 
     for (final file in archive) {
       if (file.name == 'project.json') {
         jsonContent = utf8.decode(file.content as List<int>);
-      } else if (file.name == 'background.png') {
+      } else if (file.name.endsWith('.png') || file.name.endsWith('.jpg') || file.name.endsWith('.jpeg')) {
         final bgBytes = Uint8List.fromList(file.content as List<int>);
-        // Создаем локальный Blob URL для веба
-        extractedBgPath = createBlobUrl(bgBytes);
+        final blobUrl = createBlobUrl(bgBytes);
+        extractedMap[file.name] = blobUrl;
+        if (file.name == 'background.png') {
+          extractedMap['legacy_bg'] = blobUrl;
+        }
       }
     }
 
@@ -88,38 +139,63 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     List<PageData> pages = [];
     if (decoded.containsKey('pages') && decoded['pages'] is List) {
       final pagesList = decoded['pages'] as List;
-      pages = pagesList
-          .map((j) => PageDataModel.fromJson(j as Map<String, dynamic>))
-          .toList();
+      pages = pagesList.map((j) {
+        final page = PageDataModel.fromJson(
+          j as Map<String, dynamic>,
+          pathRemapping: extractedMap,
+        );
+        final remappedPaths = page.backgroundPaths.map((path) {
+          if (extractedMap.containsKey(path)) {
+            return extractedMap[path]!;
+          } else if (path == 'background.png' && extractedMap.containsKey('legacy_bg')) {
+            return extractedMap['legacy_bg']!;
+          }
+          return path;
+        }).toList();
+        return page.copyWith(backgroundPaths: remappedPaths);
+      }).toList();
     } else if (decoded.containsKey('actions') && decoded['actions'] is List) {
-      // Обратная совместимость с версией 1.0/2.0
       final actionsList = decoded['actions'] as List;
-      final actions = actionsList
-          .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
-          .toList();
+      final actions = actionsList.map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>)).toList();
+      final legacyPath = extractedMap['legacy_bg'] ?? (extractedMap.isNotEmpty ? extractedMap.values.first : null);
       pages = [
         PageData(
           id: 'page_legacy',
           pageType: 'custom',
           title: 'Схема',
-          backgroundPath: extractedBgPath,
+          backgroundPath: legacyPath,
           history: actions,
         ),
       ];
     } else {
+      final legacyPath = extractedMap['legacy_bg'] ?? (extractedMap.isNotEmpty ? extractedMap.values.first : null);
       pages = [
         PageData(
           id: 'page_default',
           pageType: 'custom',
           title: 'Схема',
-          backgroundPath: extractedBgPath,
+          backgroundPath: legacyPath,
         ),
       ];
+    }
+
+    List<CustomSchemeItem> customSchemes = [];
+    if (decoded.containsKey('customSchemes') && decoded['customSchemes'] is List) {
+      final csList = decoded['customSchemes'] as List;
+      for (final item in csList) {
+        if (item is Map) {
+          final rawPath = item['path'] as String? ?? '';
+          final title = item['title'] as String? ?? 'Своё изображение';
+          final remappedPath = extractedMap[rawPath] ?? (rawPath == 'background.png' ? extractedMap['legacy_bg'] ?? rawPath : rawPath);
+          customSchemes.add(CustomSchemeItem(title: title, path: remappedPath));
+        }
+      }
     }
 
     return ProjectData(
       pages: pages,
       patientId: patientId,
+      customSchemes: customSchemes,
     );
   }
 

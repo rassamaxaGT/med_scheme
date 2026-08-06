@@ -1,6 +1,7 @@
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import 'dart:ui';
+import 'draw_state.dart';
 
 abstract class DrawEvent {}
 
@@ -113,6 +114,7 @@ class SetFullStateEvent extends DrawEvent {
   final String? backgroundPath;
   final List<PageData>? pages;
   final int? currentPageIndex;
+  final List<CustomSchemeItem>? customSchemes;
 
   SetFullStateEvent({
     this.history,
@@ -120,6 +122,7 @@ class SetFullStateEvent extends DrawEvent {
     this.backgroundPath,
     this.pages,
     this.currentPageIndex,
+    this.customSchemes,
   });
 }
 

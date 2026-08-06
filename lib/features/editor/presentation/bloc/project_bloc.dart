@@ -5,6 +5,7 @@ import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
 import '../../domain/repositories/project_repository.dart';
+import 'draw_state.dart';
 
 // --- Events ---
 abstract class ProjectEvent {}
@@ -17,11 +18,13 @@ class SaveProjectEvent extends ProjectEvent {
   final String projectName;
   final List<PageData> pages;
   final String? patientId;
+  final List<CustomSchemeItem>? customSchemes;
 
   SaveProjectEvent({
     required this.projectName,
     required this.pages,
     this.patientId,
+    this.customSchemes,
   });
 }
 
@@ -147,6 +150,7 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
           projectName: event.projectName,
           pages: event.pages,
           patientId: event.patientId,
+          customSchemes: event.customSchemes,
         );
         final filePath = '$_selectedDirectoryPath/${event.projectName}.meddraw';
         currentProjectFilePath = filePath;

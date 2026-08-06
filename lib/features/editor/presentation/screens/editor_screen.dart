@@ -678,6 +678,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   SetFullStateEvent(
                     pages: state.projectData.pages,
                     patientId: pId,
+                    customSchemes: state.projectData.customSchemes,
                   ),
                 );
                 setState(() {
@@ -1160,6 +1161,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       projectName: projectName,
                       pages: drawState.pages,
                       patientId: patientId,
+                      customSchemes: drawState.customSchemes,
                     ),
                   );
                 },
@@ -1210,6 +1212,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     projectName: nameController.text,
                     pages: drawState.pages,
                     patientId: patientId,
+                    customSchemes: drawState.customSchemes,
                   ),
                 );
                 Navigator.pop(dialogContext);

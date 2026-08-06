@@ -15,6 +15,7 @@ import '../../domain/repositories/project_repository.dart';
 
 import '../models/draw_action_model.dart';
 import '../models/page_data_model.dart';
+import '../../presentation/bloc/draw_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../../presentation/widgets/canvas/canvas_painter.dart';
@@ -25,8 +26,8 @@ ProjectRepository getProjectRepositoryPlatform() => ProjectRepositoryImpl();
 class ZipTaskData {
   final String outputPath;
   final String jsonContent;
-  final String? backgroundImagePath;
-  ZipTaskData(this.outputPath, this.jsonContent, this.backgroundImagePath);
+  final Map<String, String> customBackgroundFiles;
+  ZipTaskData(this.outputPath, this.jsonContent, this.customBackgroundFiles);
 }
 
 class UnzipTaskData {
@@ -37,8 +38,8 @@ class UnzipTaskData {
 
 class UnzipResult {
   final String jsonContent;
-  final String? extractedBackgroundPath;
-  UnzipResult(this.jsonContent, this.extractedBackgroundPath);
+  final Map<String, String> extractedBackgrounds;
+  UnzipResult(this.jsonContent, this.extractedBackgrounds);
 }
 
 // Функции верхнего уровня для compute()
@@ -46,23 +47,19 @@ void _zipProjectTask(ZipTaskData data) {
   final encoder = ZipFileEncoder();
   encoder.create(data.outputPath);
 
-  // 1. Создаем временный файл JSON во временной директории
-  final tempJsonFile = File('${Directory.systemTemp.path}/project.json');
+  final tempJsonFile = File('${Directory.systemTemp.path}/project_${DateTime.now().millisecondsSinceEpoch}.json');
   tempJsonFile.writeAsStringSync(data.jsonContent);
-
-  // 2. Добавляем файлы в архив
   encoder.addFile(tempJsonFile, 'project.json');
 
-  if (data.backgroundImagePath != null && data.backgroundImagePath!.isNotEmpty) {
-    final bgFile = File(data.backgroundImagePath!);
+  data.customBackgroundFiles.forEach((origPath, archiveName) {
+    final bgFile = File(origPath);
     if (bgFile.existsSync()) {
-      encoder.addFile(bgFile, 'background.png');
+      encoder.addFile(bgFile, archiveName);
     }
-  }
+  });
 
   encoder.close();
 
-  // 3. Удаляем временный файл
   try {
     tempJsonFile.deleteSync();
   } catch (_) {}
@@ -73,38 +70,39 @@ UnzipResult _unzipProjectTask(UnzipTaskData data) {
   final archive = ZipDecoder().decodeBytes(bytes);
 
   String jsonContent = '[]';
-  String? extractedBgPath;
+  final Map<String, String> extractedMap = {};
 
   for (final file in archive) {
     if (file.name == 'project.json') {
       jsonContent = utf8.decode(file.content as List<int>);
-    } else if (file.name == 'background.png') {
-      final outFile = File('${data.tempDir}/background_${DateTime.now().millisecondsSinceEpoch}.png');
+    } else if (file.name.endsWith('.png') || file.name.endsWith('.jpg') || file.name.endsWith('.jpeg')) {
+      final safeName = file.name.replaceAll('/', '_').replaceAll('\\', '_');
+      final outFile = File('${data.tempDir}/${DateTime.now().millisecondsSinceEpoch}_$safeName');
       outFile.createSync(recursive: true);
       outFile.writeAsBytesSync(file.content as List<int>);
-      extractedBgPath = outFile.path;
+      extractedMap[file.name] = outFile.path;
+      if (file.name == 'background.png') {
+        extractedMap['legacy_bg'] = outFile.path;
+      }
     }
   }
 
-  return UnzipResult(jsonContent, extractedBgPath);
+  return UnzipResult(jsonContent, extractedMap);
 }
 
 class ProjectRepositoryImpl implements ProjectRepository {
   @override
   Future<String?> requestProjectDirectory() async {
     if (Platform.isAndroid) {
-      // Использование Storage Access Framework (SAF) через shared_storage
       final uri = await saf.openDocumentTree();
       if (uri != null) {
-        return uri.toString(); // Возвращаем URI как строку пути
+        return uri.toString();
       }
       return null;
     } else if (Platform.isIOS) {
-      // На iOS папка документов доступна из приложения «Файлы» (в Info.plist включен обмен файлами)
       final directory = await getApplicationDocumentsDirectory();
       return directory.path;
     }
-    // Для других платформ (эмулятор, десктоп) возвращаем временную папку
     final tempDir = await getTemporaryDirectory();
     return tempDir.path;
   }
@@ -115,46 +113,85 @@ class ProjectRepositoryImpl implements ProjectRepository {
     required String projectName,
     required List<PageData> pages,
     required String? patientId,
+    List<CustomSchemeItem>? customSchemes,
   }) async {
-    final firstBg = pages.isNotEmpty ? pages.first.backgroundPath : null;
+    final customBgFiles = <String, String>{};
+    final pathToArchiveMap = <String, String>{};
+    int bgCounter = 0;
+
+    final allCustomPaths = <String>{};
+    for (final p in pages) {
+      for (final path in p.backgroundPaths) {
+        if (!path.startsWith('assets/')) {
+          allCustomPaths.add(path);
+        }
+      }
+    }
+    if (customSchemes != null) {
+      for (final cs in customSchemes) {
+        if (!cs.path.startsWith('assets/')) {
+          allCustomPaths.add(cs.path);
+        }
+      }
+    }
+
+    for (final path in allCustomPaths) {
+      final ext = path.toLowerCase().endsWith('.jpg') || path.toLowerCase().endsWith('.jpeg') ? 'jpg' : 'png';
+      final archiveName = 'custom_bg_$bgCounter.$ext';
+      customBgFiles[path] = archiveName;
+      pathToArchiveMap[path] = archiveName;
+      bgCounter++;
+    }
+
+    final remappedPages = pages.map((p) {
+      final newBgPaths = p.backgroundPaths.map((path) => pathToArchiveMap[path] ?? path).toList();
+      return p.copyWith(backgroundPaths: newBgPaths);
+    }).toList();
+
+    final remappedCustomSchemes = (customSchemes ?? []).map((cs) {
+      return {
+        'title': cs.title,
+        'path': pathToArchiveMap[cs.path] ?? cs.path,
+      };
+    }).toList();
+
     final Map<String, dynamic> projectMap = {
       'projectName': projectName,
       'version': '3.0',
       'patientId': patientId,
-      'pages': pages.map((p) => PageDataModel.toJson(p)).toList(),
-      'actions': pages.isNotEmpty ? pages.first.history.map((a) => DrawActionModel.toJson(a)).toList() : [],
+      'pages': remappedPages
+          .map((p) => PageDataModel.toJson(p, pathRemapping: pathToArchiveMap))
+          .toList(),
+      'customSchemes': remappedCustomSchemes,
+      'actions': remappedPages.isNotEmpty
+          ? remappedPages.first.history
+              .map((a) => DrawActionModel.toJson(a, pathRemapping: pathToArchiveMap))
+              .toList()
+          : [],
     };
 
     final jsonContent = jsonEncode(projectMap);
 
-    // Определяем выходной путь для .meddraw файла
     String outputPath = '';
     if (Platform.isAndroid && directoryPath.startsWith('content://')) {
-      // Сохраняем во временную директорию перед отправкой в SAF
       final tempDir = await getTemporaryDirectory();
       outputPath = '${tempDir.path}/$projectName.meddraw';
     } else {
       outputPath = '$directoryPath/$projectName.meddraw';
     }
 
-    // Запускаем архивацию в фоновом изоляте с помощью compute, чтобы не фризить UI
-    final taskData = ZipTaskData(outputPath, jsonContent, firstBg);
+    final taskData = ZipTaskData(outputPath, jsonContent, customBgFiles);
     await compute(_zipProjectTask, taskData);
 
-    // На Android копируем готовый файл во внешнюю директорию SAF
     if (Platform.isAndroid && directoryPath.startsWith('content://')) {
       final docUri = Uri.parse(directoryPath);
       final fileBytes = File(outputPath).readAsBytesSync();
-      
-      // Создаем файл через SAF
       await saf.createFile(
         docUri,
         mimeType: 'application/octet-stream',
         displayName: '$projectName.meddraw',
         bytes: fileBytes,
       );
-
-      // Удаляем временный локальный файл
       try {
         File(outputPath).deleteSync();
       } catch (_) {}
@@ -167,7 +204,6 @@ class ProjectRepositoryImpl implements ProjectRepository {
     if (filePath == null) throw Exception('Путь к файлу на IO-платформе пуст');
     final tempDir = await getTemporaryDirectory();
     
-    // Если на Android это SAF Uri, сначала скачиваем его во временный файл
     String localZipPath = filePath;
     if (Platform.isAndroid && filePath.startsWith('content://')) {
       final uri = Uri.parse(filePath);
@@ -179,11 +215,9 @@ class ProjectRepositoryImpl implements ProjectRepository {
       localZipPath = tempFile.path;
     }
 
-    // Разархивируем в фоновом изоляте
     final taskData = UnzipTaskData(localZipPath, tempDir.path);
     final result = await compute(_unzipProjectTask, taskData);
 
-    // Удаляем временный загрузочный файл
     if (localZipPath != filePath) {
       try {
         File(localZipPath).deleteSync();
@@ -192,42 +226,68 @@ class ProjectRepositoryImpl implements ProjectRepository {
 
     final decoded = jsonDecode(result.jsonContent) as Map<String, dynamic>;
     final patientId = decoded['patientId'] as String?;
+    final extractedMap = result.extractedBackgrounds;
 
     List<PageData> pages = [];
     if (decoded.containsKey('pages') && decoded['pages'] is List) {
       final pagesList = decoded['pages'] as List;
-      pages = pagesList
-          .map((j) => PageDataModel.fromJson(j as Map<String, dynamic>))
-          .toList();
+      pages = pagesList.map((j) {
+        final page = PageDataModel.fromJson(
+          j as Map<String, dynamic>,
+          pathRemapping: extractedMap,
+        );
+        final remappedPaths = page.backgroundPaths.map((path) {
+          if (extractedMap.containsKey(path)) {
+            return extractedMap[path]!;
+          } else if (path == 'background.png' && extractedMap.containsKey('legacy_bg')) {
+            return extractedMap['legacy_bg']!;
+          }
+          return path;
+        }).toList();
+        return page.copyWith(backgroundPaths: remappedPaths);
+      }).toList();
     } else if (decoded.containsKey('actions') && decoded['actions'] is List) {
-      // Обратная совместимость с версией 1.0/2.0
       final actionsList = decoded['actions'] as List;
-      final actions = actionsList
-          .map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>))
-          .toList();
+      final actions = actionsList.map((json) => DrawActionModel.fromJson(json as Map<String, dynamic>)).toList();
+      final legacyPath = extractedMap['legacy_bg'] ?? (extractedMap.isNotEmpty ? extractedMap.values.first : null);
       pages = [
         PageData(
           id: 'page_legacy',
           pageType: 'custom',
           title: 'Схема',
-          backgroundPath: result.extractedBackgroundPath,
+          backgroundPath: legacyPath,
           history: actions,
         ),
       ];
     } else {
+      final legacyPath = extractedMap['legacy_bg'] ?? (extractedMap.isNotEmpty ? extractedMap.values.first : null);
       pages = [
         PageData(
           id: 'page_default',
           pageType: 'custom',
           title: 'Схема',
-          backgroundPath: result.extractedBackgroundPath,
+          backgroundPath: legacyPath,
         ),
       ];
+    }
+
+    List<CustomSchemeItem> customSchemes = [];
+    if (decoded.containsKey('customSchemes') && decoded['customSchemes'] is List) {
+      final csList = decoded['customSchemes'] as List;
+      for (final item in csList) {
+        if (item is Map) {
+          final rawPath = item['path'] as String? ?? '';
+          final title = item['title'] as String? ?? 'Своё изображение';
+          final remappedPath = extractedMap[rawPath] ?? (rawPath == 'background.png' ? extractedMap['legacy_bg'] ?? rawPath : rawPath);
+          customSchemes.add(CustomSchemeItem(title: title, path: remappedPath));
+        }
+      }
     }
 
     return ProjectData(
       pages: pages,
       patientId: patientId,
+      customSchemes: customSchemes,
     );
   }
 

@@ -10,6 +10,8 @@ import 'package:med_scheme/features/editor/presentation/widgets/toolbox/floating
 import 'package:med_scheme/features/editor/presentation/widgets/canvas/canvas_widget.dart';
 import 'package:flutter/material.dart';
 
+import 'package:med_scheme/features/editor/presentation/bloc/draw_state.dart';
+
 class FakeProjectRepository implements ProjectRepository {
   @override
   Future<String?> requestProjectDirectory() async => 'test_dir';
@@ -20,6 +22,7 @@ class FakeProjectRepository implements ProjectRepository {
     required String projectName,
     required List<PageData> pages,
     required String? patientId,
+    List<CustomSchemeItem>? customSchemes,
   }) async {}
 
   @override
