@@ -60,7 +60,7 @@ class _EditorScreenState extends State<EditorScreen> {
   final _patientIdController = TextEditingController();
   // Используем ValueNotifier для позиции тулбара — избегаем перестройки всего дерева при drag
   final _toolboxPositionNotifier = ValueNotifier<Offset?>(null);
-  final _toolboxOrientationNotifier = ValueNotifier<ToolboxOrientation>(ToolboxOrientation.horizontal);
+  final _toolboxOrientationNotifier = ValueNotifier<ToolboxOrientation>(ToolboxOrientation.verticalLeft);
   Offset? _dragPosition;
 
   List<String>? _savedHistoryIds;
@@ -746,10 +746,9 @@ class _EditorScreenState extends State<EditorScreen> {
                               final double verticalHeight =
                                   (screenHeight - 32.0).clamp(100.0, 520.0);
 
-                              final double initialX =
-                                  (screenWidth - horizontalWidth) / 2;
+                              final double initialX = 16.0;
                               final double initialY =
-                                  screenHeight - horizontalHeight - 16;
+                                  (screenHeight - verticalHeight) / 2;
 
                               Offset computeClampedOffset(Offset raw, ToolboxOrientation orientation) {
                                 final double currentWidth =
@@ -821,16 +820,28 @@ class _EditorScreenState extends State<EditorScreen> {
                                   tool == ToolType.pencil ||
                                   tool == ToolType.adhesions ||
                                   tool == ToolType.fibrosis ||
+                                  tool == ToolType.spray ||
                                   tool == ToolType.arrow ||
                                   tool == ToolType.iud ||
-                                  tool == ToolType.foci;
+                                  tool == ToolType.foci ||
+                                  tool == ToolType.myoma ||
+                                  tool == ToolType.cyst;
 
                               final bool showThickness =
                                   tool == ToolType.pencil ||
                                   tool == ToolType.adhesions ||
                                   tool == ToolType.fibrosis ||
+                                  tool == ToolType.spray ||
                                   tool == ToolType.arrow ||
-                                  tool == ToolType.eraser;
+                                  tool == ToolType.eraser ||
+                                  tool == ToolType.foci ||
+                                  tool == ToolType.iud ||
+                                  tool == ToolType.customStamp ||
+                                  tool == ToolType.gui ||
+                                  tool == ToolType.follicle ||
+                                  tool == ToolType.cyst ||
+                                  tool == ToolType.adenomyosis ||
+                                  tool == ToolType.polyp;
 
                               final bool showCustomStamps = tool == ToolType.customStamp;
                               final bool showFigo = tool == ToolType.myoma;
@@ -1525,192 +1536,6 @@ class _EditorScreenState extends State<EditorScreen> {
     } catch (e) {
       debugPrint('Ошибка проверки/восстановления черновика: $e');
     }
-  }
-}
-
-class _PageTabBar extends StatelessWidget {
-  const _PageTabBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<DrawBloc, DrawState>(
-      builder: (context, state) {
-        return Container(
-          height: 42,
-          color: const Color(0xFF1E1E1E),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: state.pages.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 4),
-                  itemBuilder: (context, index) {
-                    final page = state.pages[index];
-                    final isSelected = index == state.currentPageIndex;
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          context.read<DrawBloc>().add(SwitchPageEvent(index));
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFF0F4C81)
-                                : Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isSelected
-                                  ? const Color(0xFF1976D2)
-                                  : Colors.white12,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                page.pageType == 'pelvis'
-                                    ? Icons.accessibility_new
-                                    : page.pageType == 'uterus'
-                                    ? Icons.favorite
-                                    : Icons.description,
-                                size: 14,
-                                color: isSelected
-                                    ? Colors.white
-                                    : Colors.white70,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                page.title,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : Colors.white70,
-                                ),
-                              ),
-                              if (state.pages.length > 1) ...[
-                                const SizedBox(width: 6),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    context.read<DrawBloc>().add(
-                                      RemovePageEvent(index),
-                                    );
-                                  },
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(2.0),
-                                    child: Icon(
-                                      Icons.close,
-                                      size: 12,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 6),
-              Tooltip(
-                message: 'Добавить лист',
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.add_box_outlined,
-                    color: Colors.white70,
-                    size: 20,
-                  ),
-                  onPressed: () => _showAddPageDialog(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _showAddPageDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return SimpleDialog(
-          title: const Text('Добавить новый лист протокола'),
-          children: [
-            // SimpleDialogOption для таза временно скрыт / отключен, но код сохранен:
-            /*
-            SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                context.read<DrawBloc>().add(
-                  AddPageEvent(pageType: 'pelvis', title: 'Таз'),
-                );
-              },
-              child: const Row(
-                children: [
-                  Icon(Icons.accessibility_new, color: Color(0xFF0F4C81)),
-                  SizedBox(width: 12),
-                  Text('Схема органов малого таза (Таз)'),
-                ],
-              ),
-            ),
-            */
-            SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                context.read<DrawBloc>().add(
-                  AddPageEvent(pageType: 'uterus', title: 'Матка'),
-                );
-              },
-              child: const Row(
-                children: [
-                  Icon(Icons.favorite, color: Color(0xFF0F4C81)),
-                  SizedBox(width: 12),
-                  Text('Схема матки (Матка)'),
-                ],
-              ),
-            ),
-            SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                context.read<DrawBloc>().add(
-                  AddPageEvent(pageType: 'custom', title: 'Чистый лист'),
-                );
-              },
-              child: const Row(
-                children: [
-                  Icon(Icons.description, color: Color(0xFF0F4C81)),
-                  SizedBox(width: 12),
-                  Text('Чистый лист (Без схемы)'),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 }
 

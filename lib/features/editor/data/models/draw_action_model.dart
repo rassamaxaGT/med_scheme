@@ -21,6 +21,14 @@ class DrawActionModel {
       'offsetX': action.offsetX,
       'offsetY': action.offsetY,
       'targetSchemePath': mappedPath,
+      if (action.eraserMasks != null && action.eraserMasks!.isNotEmpty)
+        'eraserMasks': action.eraserMasks!
+            .map((m) => {
+                  'localPoints': m.localPoints.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+                  'strokeWidth': m.strokeWidth,
+                  'target': m.target.name,
+                })
+            .toList(),
     };
 
     if (action is StrokeAction) {
@@ -60,6 +68,13 @@ class DrawActionModel {
         'text': action.text,
         'isDashed': action.isDashed,
       };
+    } else if (action is EraserStrokeAction) {
+      return {
+        ...baseMap,
+        'type': 'eraserStroke',
+        'points': action.points.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+        'target': action.target.name,
+      };
     }
     throw UnimplementedError('Unknown DrawAction subclass: ${action.runtimeType}');
   }
@@ -79,6 +94,22 @@ class DrawActionModel {
         (rawPath != null && pathRemapping != null)
             ? (pathRemapping[rawPath] ?? rawPath)
             : rawPath;
+
+    final rawMasks = json['eraserMasks'] as List?;
+    final List<EraserMaskData>? eraserMasks = rawMasks?.map((m) {
+      final targetName = m['target'] as String? ?? 'annotationsOnly';
+      final target = EraserTarget.values.firstWhere(
+        (e) => e.name == targetName,
+        orElse: () => EraserTarget.annotationsOnly,
+      );
+      return EraserMaskData(
+        localPoints: (m['localPoints'] as List)
+            .map((p) => Offset((p['x'] as num).toDouble(), (p['y'] as num).toDouble()))
+            .toList(),
+        strokeWidth: (m['strokeWidth'] as num).toDouble(),
+        target: target,
+      );
+    }).toList();
 
     switch (type) {
       case 'stroke':
@@ -100,6 +131,7 @@ class DrawActionModel {
           offsetX: offsetX,
           offsetY: offsetY,
           targetSchemePath: targetSchemePath,
+          eraserMasks: eraserMasks,
         );
       case 'shape':
         return ShapeAction(
@@ -122,6 +154,7 @@ class DrawActionModel {
           offsetX: offsetX,
           offsetY: offsetY,
           targetSchemePath: targetSchemePath,
+          eraserMasks: eraserMasks,
         );
       case 'stamp':
         return StampAction(
@@ -140,6 +173,7 @@ class DrawActionModel {
           offsetX: offsetX,
           offsetY: offsetY,
           targetSchemePath: targetSchemePath,
+          eraserMasks: eraserMasks,
         );
       case 'text':
         return TextAction(
@@ -161,9 +195,34 @@ class DrawActionModel {
           offsetX: offsetX,
           offsetY: offsetY,
           targetSchemePath: targetSchemePath,
+          eraserMasks: eraserMasks,
+        );
+      case 'eraserStroke':
+        final targetName = json['target'] as String? ?? 'annotationsOnly';
+        final eraserTarget = EraserTarget.values.firstWhere(
+          (e) => e.name == targetName,
+          orElse: () => EraserTarget.annotationsOnly,
+        );
+        return EraserStrokeAction(
+          id: id,
+          strokeWidth: strokeWidth,
+          points: (json['points'] as List)
+              .map((p) => Offset(
+                    (p['x'] as num).toDouble(),
+                    (p['y'] as num).toDouble(),
+                  ))
+              .toList(),
+          target: eraserTarget,
+          scaleX: scaleX,
+          scaleY: scaleY,
+          offsetX: offsetX,
+          offsetY: offsetY,
+          targetSchemePath: targetSchemePath,
+          eraserMasks: eraserMasks,
         );
       default:
         throw UnimplementedError('Unknown DrawAction type in JSON: $type');
     }
   }
+
 }

@@ -23,6 +23,7 @@ class DrawState {
   final String? customStampPath;
   final List<String> customStamps;
   final List<CustomSchemeItem> customSchemes;
+  final EraserTarget eraserTarget;
 
   DrawState({
     required this.pages,
@@ -36,6 +37,7 @@ class DrawState {
     this.customStampPath,
     required this.customStamps,
     this.customSchemes = const [],
+    this.eraserTarget = EraserTarget.annotationsOnly,
   });
 
   /// Текущая активная страница
@@ -78,6 +80,7 @@ class DrawState {
       currentLineDashed: false,
       customStampPath: null,
       customStamps: [],
+      eraserTarget: EraserTarget.annotationsOnly,
     );
   }
 
@@ -99,6 +102,7 @@ class DrawState {
     String? customStampPath,
     List<String>? customStamps,
     List<CustomSchemeItem>? customSchemes,
+    EraserTarget? eraserTarget,
   }) {
     List<PageData> newPages = pages != null ? List<PageData>.from(pages) : List<PageData>.from(this.pages);
     int newPageIndex = currentPageIndex ?? this.currentPageIndex;
@@ -144,6 +148,7 @@ class DrawState {
       customStampPath: customStampPath ?? this.customStampPath,
       customStamps: customStamps ?? this.customStamps,
       customSchemes: customSchemes ?? this.customSchemes,
+      eraserTarget: eraserTarget ?? this.eraserTarget,
     );
   }
 }

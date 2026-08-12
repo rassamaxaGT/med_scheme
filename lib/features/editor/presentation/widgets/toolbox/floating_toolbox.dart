@@ -209,14 +209,25 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                             isVertical: isVertical,
                           ),
 
-                          // 8. Фолликул (новый)
+                          // 8. Фолликул
                           _buildToolButton(
                             context,
                             tool: ToolType.follicle,
                             label: 'Фоллик.',
-                            tooltip: 'Фолликул (голубой контур без заливки)',
+                            tooltip: 'Фолликул (фиксированный круг 8px)',
                             icon: Icons.radio_button_unchecked,
                             customColor: const Color(0xFF03A9F4), // Light Blue
+                            isVertical: isVertical,
+                          ),
+
+                          // 8.1 Киста (измеряемая овалами, без заливки)
+                          _buildToolButton(
+                            context,
+                            tool: ToolType.cyst,
+                            label: 'Киста',
+                            tooltip: 'Киста (измеряемая по размеру, без заливки)',
+                            icon: Icons.panorama_fish_eye,
+                            customColor: const Color(0xFF03A9F4), // Light Blue / Cyan
                             isVertical: isVertical,
                           ),
 
@@ -308,6 +319,16 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                             label: 'Кисть',
                             tooltip: 'Обычная кисть',
                             icon: Icons.brush,
+                            isVertical: isVertical,
+                          ),
+
+                          // 14.1 Спрей (баллончик)
+                          _buildToolButton(
+                            context,
+                            tool: ToolType.spray,
+                            label: 'Спрей',
+                            tooltip: 'Спрей / Баллончик',
+                            icon: Icons.blur_on,
                             isVertical: isVertical,
                           ),
 
@@ -1101,8 +1122,12 @@ class SettingsBubble extends StatelessWidget {
       ),
     );
 
+    final labelText = currentTool == ToolType.spray
+        ? 'Конус: ${currentStrokeWidth.round()} px'
+        : '${currentStrokeWidth.round()} px';
+
     final label = Text(
-      '${currentStrokeWidth.round()} px',
+      labelText,
       style: TextStyle(fontSize: isVertical ? 10 : 11, color: Colors.white70),
     );
 
@@ -1115,11 +1140,15 @@ class SettingsBubble extends StatelessWidget {
       thumbColor: Colors.white,
     );
 
-    final maxStrokeWidth = currentTool == ToolType.eraser ? 80.0 : 20.0;
+    final maxStrokeWidth = currentTool == ToolType.eraser
+        ? 80.0
+        : (currentTool == ToolType.spray ? 60.0 : 20.0);
+    final minStrokeWidth = currentTool == ToolType.spray ? 4.0 : 1.0;
+
     final slider = Slider(
-      min: 1.0,
+      min: minStrokeWidth,
       max: maxStrokeWidth,
-      value: currentStrokeWidth.clamp(1.0, maxStrokeWidth),
+      value: currentStrokeWidth.clamp(minStrokeWidth, maxStrokeWidth),
       onChanged: onThicknessChanged,
     );
 
@@ -1128,16 +1157,16 @@ class SettingsBubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           preview,
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           RotatedBox(
             quarterTurns: 3,
             child: SizedBox(
-              width: 100,
-              height: 24,
+              width: 75,
+              height: 20,
               child: SliderTheme(data: sliderThemeData, child: slider),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           label,
         ],
       );
@@ -1169,19 +1198,80 @@ class SettingsBubble extends StatelessWidget {
         : const EdgeInsets.symmetric(horizontal: 12.0),
   );
 
+  Widget _buildEraserModeToggle(BuildContext context, bool isVertical) {
+    final state = context.watch<DrawBloc>().state;
+    final isAnnotationsOnly = state.eraserTarget == EraserTarget.annotationsOnly;
+
+    return GestureDetector(
+      onTap: () {
+        final newTarget = isAnnotationsOnly
+            ? EraserTarget.everything
+            : EraserTarget.annotationsOnly;
+        context.read<DrawBloc>().add(SetEraserTargetEvent(newTarget));
+      },
+      child: Tooltip(
+        message: isAnnotationsOnly ? 'Режим: Только условные обозначения' : 'Режим: Стирать всё (с фоном)',
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isVertical ? 6.0 : 10.0,
+            vertical: isVertical ? 6.0 : 5.0,
+          ),
+          decoration: BoxDecoration(
+            color: isAnnotationsOnly
+                ? const Color(0xFF0F4C81).withValues(alpha: 0.4)
+                : Colors.orangeAccent.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8.0),
+            border: Border.all(
+              color: isAnnotationsOnly ? const Color(0xFF0F4C81) : Colors.orangeAccent,
+              width: 1.0,
+            ),
+          ),
+          child: isVertical
+              ? Icon(
+                  isAnnotationsOnly ? Icons.layers_clear : Icons.auto_fix_high,
+                  size: 18,
+                  color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isAnnotationsOnly ? Icons.layers_clear : Icons.auto_fix_high,
+                      size: 16,
+                      color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isAnnotationsOnly ? 'Только обозначения' : 'Стирать всё (с фоном)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool showColor =
         currentTool == ToolType.pencil ||
         currentTool == ToolType.adhesions ||
         currentTool == ToolType.fibrosis ||
+        currentTool == ToolType.spray ||
         currentTool == ToolType.arrow ||
-        currentTool == ToolType.myoma;
+        currentTool == ToolType.myoma ||
+        currentTool == ToolType.cyst;
 
     final bool showThickness =
         currentTool == ToolType.pencil ||
         currentTool == ToolType.adhesions ||
         currentTool == ToolType.fibrosis ||
+        currentTool == ToolType.spray ||
         currentTool == ToolType.arrow ||
         currentTool == ToolType.eraser ||
         currentTool == ToolType.foci ||
@@ -1189,6 +1279,7 @@ class SettingsBubble extends StatelessWidget {
         currentTool == ToolType.customStamp ||
         currentTool == ToolType.gui ||
         currentTool == ToolType.follicle ||
+        currentTool == ToolType.cyst ||
         currentTool == ToolType.adenomyosis ||
         currentTool == ToolType.polyp;
 
@@ -1198,6 +1289,10 @@ class SettingsBubble extends StatelessWidget {
     // Fix #13: строим единый список дочерних виджетов,
     // независимый от ориентации — затем оборачиваем в Flex с нужным Axis.
     final children = <Widget>[
+      if (currentTool == ToolType.eraser) ...[
+        _buildEraserModeToggle(context, isVertical),
+        _buildDivider(isVertical),
+      ],
       if (currentTool == ToolType.arrow || currentTool == ToolType.pencil) ...[
         _buildDashedToggle(context, isVertical),
         _buildDivider(isVertical),
@@ -1421,6 +1516,29 @@ class _ToolIconPainter extends CustomPainter {
         canvas.drawCircle(center, radius - 1, ring);
         break;
 
+      case ToolType.cyst:
+        // Киста: измеряемый голубой эллиптический контур без заливки
+        final ring = Paint()
+          ..color = const Color(0xFF03A9F4)
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawOval(Rect.fromCenter(center: center, width: (radius - 1) * 2.2, height: (radius - 1) * 1.6), ring);
+        break;
+
+      case ToolType.spray:
+        // Спрей: облако мелких цветных точек
+        final sprayPaint = Paint()
+          ..color = color
+          ..style = PaintingStyle.fill;
+        for (int i = 0; i < 16; i++) {
+          final angle = (i * 2.3999);
+          final r = radius * 0.7 * math.sqrt(i / 16.0);
+          final px = center.dx + math.cos(angle) * r;
+          final py = center.dy + math.sin(angle) * r;
+          canvas.drawCircle(Offset(px, py), 1.2, sprayPaint);
+        }
+        break;
+
       case ToolType.adenomyosis:
         // Аденомиоз: размытый вишневый диск с рваными краями
         final blurPaint = Paint()
@@ -1485,7 +1603,11 @@ class _ToolIconPainter extends CustomPainter {
           final wave = 1.0 + 0.15 * (i % 2 == 0 ? 1 : -1);
           final x = centerInf.dx + math.cos(a) * rx * wave;
           final y = centerInf.dy + math.sin(a) * ry * wave;
-          if (i == 0) pathInf.moveTo(x, y); else pathInf.lineTo(x, y);
+          if (i == 0) {
+            pathInf.moveTo(x, y);
+          } else {
+            pathInf.lineTo(x, y);
+          }
         }
         pathInf.close();
         canvas.drawPath(pathInf, borderPaint);

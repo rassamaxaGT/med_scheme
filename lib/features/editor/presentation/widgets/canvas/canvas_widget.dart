@@ -59,14 +59,38 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   // Кэш пользовательских PNG-штампов
   final Map<String, ui.Image?> _stampImages = {};
 
+  // ── Оптимизация: кэш non-null карт ─────────────────────────────────────────
+  // Вместо создания Map.fromEntries(...) на каждый build — поддерживаем
+  // готовые карты, обновляемые только при изменении карт исходных.
+  Map<String, ui.Image> _bgImagesNonNull = {};
+  Map<String, ui.Image> _stampImagesNonNull = {};
+
+  void _rebuildNonNullBgImages() {
+    _bgImagesNonNull = Map.fromEntries(
+      _bgImages.entries.where((e) => e.value != null).map((e) => MapEntry(e.key, e.value!)),
+    );
+  }
+
+  void _rebuildNonNullStampImages() {
+    _stampImagesNonNull = Map.fromEntries(
+      _stampImages.entries.where((e) => e.value != null).map((e) => MapEntry(e.key, e.value!)),
+    );
+  }
+
+  // ── ValueNotifier-driven repaint ────────────────────────────────────────────────
+  // Активный штрих: не вызывает setState — painter сам перерисовывается через repaint
+  // listenable. Убирает 60+ rebuildа widget-дерева в секунду во время рисования.
+  final ValueNotifier<DrawAction?> _activeStrokeNotifier = ValueNotifier(null);
+
+  // Курсор ластика: только обновляет overlay-виджет, не перестраивает весь виджет
+  final ValueNotifier<Offset?> _eraserCursorNotifier = ValueNotifier(null);
+
   // Переменные для зума и панорамирования (Zoom & Pan)
   double _scale = 1.0;
   double _previousScale = 1.0;
   Offset _offset = Offset.zero;
   Offset _normalizedFocalPoint = Offset.zero;
 
-  // Курсор ластика в экранных координатах
-  Offset? _eraserCursorPosition;
   List<DrawAction> _initialHistoryBeforeErase = [];
   bool _hasErasedAnything = false;
   DateTime? _lastEraseTime; // Fix #6: throttle ластика
@@ -88,6 +112,16 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   String _generateId() =>
       '${DateTime.now().millisecondsSinceEpoch}_${_idCounter++}';
 
+  // ── Кэширование статичного растрового слоя (Hardware GPU Bitmap Cache) ──
+  ui.Image? _staticImageCache;
+  List<DrawAction>? _cachedHistoryRef;
+  String? _cachedSelectedActionId;
+  List<String>? _cachedBackgroundPaths;
+  ui.Image? _cachedBgImage;
+  int _cachedBgImagesCount = 0;
+  int _cachedStampImagesCount = 0;
+  Size? _cachedLayoutSize;
+
   @override
   void initState() {
     super.initState();
@@ -97,7 +131,58 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   @override
   void dispose() {
     widget.resetZoomNotifier?.removeListener(_onResetZoom);
+    _staticImageCache?.dispose();
+    _staticImageCache = null;
+    _activeStrokeNotifier.dispose();
+    _eraserCursorNotifier.dispose();
     super.dispose();
+  }
+
+  ui.Image? _getOrUpdateStaticImage(DrawState state, Size containerSize) {
+    if (containerSize.width <= 0 || containerSize.height <= 0) {
+      return _staticImageCache;
+    }
+
+    final bgImg = widget.backgroundImage ?? _loadedBackgroundImage;
+    final validBgImagesCount = _bgImagesNonNull.length;
+    final validStampImagesCount = _stampImagesNonNull.length;
+
+    final bool needsRebuild = _staticImageCache == null ||
+        _cachedHistoryRef != state.history ||
+        _cachedSelectedActionId != _selectedActionId ||
+        _cachedBackgroundPaths != state.backgroundPaths ||
+        _cachedBgImage != bgImg ||
+        _cachedBgImagesCount != validBgImagesCount ||
+        _cachedStampImagesCount != validStampImagesCount ||
+        _cachedLayoutSize != containerSize;
+
+    if (needsRebuild) {
+      _staticImageCache?.dispose();
+      final double pixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+
+      _staticImageCache = CanvasPainter.buildStaticImage(
+        size: containerSize,
+        history: state.history,
+        selectedActionId: _selectedActionId,
+        backgroundPaths: state.backgroundPaths,
+        backgroundPath: state.backgroundPath,
+        backgroundImage: bgImg,
+        bgImages: _bgImagesNonNull,
+        stampImages: _stampImagesNonNull,
+        patientId: state.patientId,
+        pixelRatio: pixelRatio,
+      );
+
+      _cachedHistoryRef = state.history;
+      _cachedSelectedActionId = _selectedActionId;
+      _cachedBackgroundPaths = List<String>.from(state.backgroundPaths);
+      _cachedBgImage = bgImg;
+      _cachedBgImagesCount = validBgImagesCount;
+      _cachedStampImagesCount = validStampImagesCount;
+      _cachedLayoutSize = containerSize;
+    }
+
+    return _staticImageCache;
   }
 
   void _onResetZoom() {
@@ -191,10 +276,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                 _isZooming = false;
               }
               if (activeState.currentTool == ToolType.eraser) {
+                _eraserCursorNotifier.value = null;
                 setState(() {
                   _initialHistoryBeforeErase = [];
                   _hasErasedAnything = false;
-                  _eraserCursorPosition = null;
                   _currentPoints = [];
                 });
               } else if (activeState.currentTool == ToolType.move) {
@@ -213,12 +298,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               cursor: _getCursorForTool(state),
               onHover: (event) {
                 final activeState = context.read<DrawBloc>().state;
-                if (activeState.currentTool == ToolType.eraser && mounted) {
-                  setState(() => _eraserCursorPosition = event.localPosition);
+                if (activeState.currentTool == ToolType.eraser) {
+                  // Не вызываем setState — только обновляем notifier
+                  _eraserCursorNotifier.value = event.localPosition;
                 }
               },
               onExit: (_) {
-                if (mounted) setState(() => _eraserCursorPosition = null);
+                _eraserCursorNotifier.value = null;
               },
               child: GestureDetector(
                 // Scale gestures для масштабирования холста двумя пальцами
@@ -230,36 +316,47 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                     Transform(
                       transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0.0)
                         * Matrix4.diagonal3Values(_scale, _scale, 1.0),
-                      child: CustomPaint(
-                        size: Size.infinite,
-                        painter: CanvasPainter(
-                          history: state.history,
-                          // Не отображаем _activeAction для ластика — только курсор-круг
-                          activeAction: state.currentTool != ToolType.eraser ? _activeAction : null,
-                          backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
-                          backgroundPaths: state.backgroundPaths,
-                          backgroundPath: state.backgroundPath,
-                          bgImages: Map<String, ui.Image>.fromEntries(
-                            _bgImages.entries
-                                .where((e) => e.value != null)
-                                .map((e) => MapEntry(e.key, e.value!)),
-                          ),
-                          stampImages: Map<String, ui.Image>.fromEntries(
-                            _stampImages.entries
-                                .where((e) => e.value != null)
-                                .map((e) => MapEntry(e.key, e.value!)),
-                          ),
-                          selectedActionId: _selectedActionId,
-                          patientId: state.patientId,
+                      child: RepaintBoundary(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
+                            final staticImage = _getOrUpdateStaticImage(state, containerSize);
+
+                            return CustomPaint(
+                              size: Size.infinite,
+                              painter: CanvasPainter(
+                                history: state.history,
+                                // Используем notifier — painter сам перерисовывается без setState
+                                activeActionNotifier: state.currentTool != ToolType.eraser
+                                    ? _activeStrokeNotifier
+                                    : null,
+                                backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
+                                backgroundPaths: state.backgroundPaths,
+                                backgroundPath: state.backgroundPath,
+                                bgImages: _bgImagesNonNull,
+                                stampImages: _stampImagesNonNull,
+                                selectedActionId: _selectedActionId,
+                                patientId: state.patientId,
+                                staticImage: staticImage,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
                     // Кнопка удаления выделенного объекта
                     if (state.currentTool == ToolType.move && _selectedActionId != null)
                       _buildDeleteButton(context, state),
-                    // Курсор ластика — оверлей
-                    if (state.currentTool == ToolType.eraser && _eraserCursorPosition != null)
-                      _buildEraserCursor(state),
+                    // Курсор ластика — оверлей, не требует перестройки всего виджета
+                    ValueListenableBuilder<Offset?>(
+                      valueListenable: _eraserCursorNotifier,
+                      builder: (context, eraserPos, _) {
+                        if (state.currentTool == ToolType.eraser && eraserPos != null) {
+                          return _buildEraserCursor(state, eraserPos);
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -304,6 +401,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (mounted) {
         setState(() {
           _bgImages[path] = image;
+          _rebuildNonNullBgImages(); // синхронизируем кэш non-null карты
           if (_loadedBackgroundImage == null || path == _loadedBackgroundPath) {
             _loadedBackgroundImage = image;
             _loadedBackgroundPath = path;
@@ -315,6 +413,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (mounted) {
         setState(() {
           _bgImages.remove(path);
+          _rebuildNonNullBgImages();
         });
       }
     }
@@ -327,6 +426,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (mounted) {
         setState(() {
           _stampImages[path] = image;
+          _rebuildNonNullStampImages(); // синхронизируем кэш non-null карты
         });
       }
     } catch (e) {
@@ -334,6 +434,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (mounted) {
         setState(() {
           _stampImages.remove(path);
+          _rebuildNonNullStampImages();
         });
       }
     }
@@ -555,6 +656,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: newOffsetX,
         offsetY: newOffsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is ShapeAction) {
       return ShapeAction(
@@ -571,6 +673,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: newOffsetX,
         offsetY: newOffsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is StampAction) {
       return StampAction(
@@ -586,6 +689,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: newOffsetX,
         offsetY: newOffsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is TextAction) {
       return TextAction(
@@ -601,6 +705,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: newOffsetX,
         offsetY: newOffsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     }
     return original;
@@ -661,95 +766,6 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     return unscaled;
   }
 
-  // Метод изменения размера объекта (обновляем scaleX/scaleY и offsetX/offsetY)
-  DrawAction _resizeAction(DrawAction original, Rect oldRect, Rect newRect) {
-    final originalBounds = CanvasPainter.getOriginalActionBounds(original);
-    if (originalBounds.width == 0 || originalBounds.height == 0) return original;
-
-    double newScaleX = newRect.width / originalBounds.width;
-    double newScaleY = newRect.height / originalBounds.height;
-
-    // Запрещаем отрицательный масштаб — объект не должен отражаться при сжатии
-    const double minScale = 0.05;
-    newScaleX = newScaleX.clamp(minScale, double.infinity);
-    newScaleY = newScaleY.clamp(minScale, double.infinity);
-
-    // Для кругов (эндометриома, миома) сохраняем пропорции 1:1 при изменении размера
-    if (original is ShapeAction &&
-        (original.shapeType == 'endometrioma' || original.shapeType == 'myoma')) {
-      final double scale = (newScaleX + newScaleY) / 2;
-      newScaleX = scale;
-      newScaleY = scale;
-    }
-
-    final newOffsetX = newRect.left - originalBounds.left * newScaleX;
-    final newOffsetY = newRect.top - originalBounds.top * newScaleY;
-
-    if (original is StrokeAction) {
-      return StrokeAction(
-        id: original.id,
-        color: original.color,
-        strokeWidth: original.strokeWidth,
-        points: original.points,
-        isEraser: original.isEraser,
-        brushType: original.brushType,
-        isDashed: original.isDashed,
-        scaleX: newScaleX,
-        scaleY: newScaleY,
-        offsetX: newOffsetX,
-        offsetY: newOffsetY,
-        targetSchemePath: original.targetSchemePath,
-      );
-    } else if (original is ShapeAction) {
-      return ShapeAction(
-        id: original.id,
-        color: original.color,
-        strokeWidth: original.strokeWidth,
-        startPoint: original.startPoint,
-        endPoint: original.endPoint,
-        shapeType: original.shapeType,
-        figoType: original.figoType,
-        rotation: original.rotation,
-        scaleX: newScaleX,
-        scaleY: newScaleY,
-        offsetX: newOffsetX,
-        offsetY: newOffsetY,
-        targetSchemePath: original.targetSchemePath,
-      );
-    } else if (original is StampAction) {
-      return StampAction(
-        id: original.id,
-        color: original.color,
-        strokeWidth: original.strokeWidth,
-        position: original.position,
-        stampType: original.stampType,
-        customStampPath: original.customStampPath,
-        rotation: original.rotation,
-        scaleX: newScaleX,
-        scaleY: newScaleY,
-        offsetX: newOffsetX,
-        offsetY: newOffsetY,
-        targetSchemePath: original.targetSchemePath,
-      );
-    } else if (original is TextAction) {
-      return TextAction(
-        id: original.id,
-        color: original.color,
-        strokeWidth: original.strokeWidth,
-        startPoint: original.startPoint,
-        endPoint: original.endPoint,
-        text: original.text,
-        isDashed: original.isDashed,
-        scaleX: newScaleX,
-        scaleY: newScaleY,
-        offsetX: newOffsetX,
-        offsetY: newOffsetY,
-        targetSchemePath: original.targetSchemePath,
-      );
-    }
-    return original;
-  }
-
   /// Применяет новый scale и offset к объекту, сохраняя все остальные поля.
   /// Используется при resize в локальном пространстве объекта (корректно для повёрнутых).
   DrawAction _applyScaleAndOffset(DrawAction original, double scaleX, double scaleY, double offsetX, double offsetY) {
@@ -767,6 +783,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: offsetX,
         offsetY: offsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is ShapeAction) {
       return ShapeAction(
@@ -783,6 +800,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: offsetX,
         offsetY: offsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is StampAction) {
       return StampAction(
@@ -798,6 +816,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: offsetX,
         offsetY: offsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     } else if (original is TextAction) {
       return TextAction(
@@ -813,6 +832,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         offsetX: offsetX,
         offsetY: offsetY,
         targetSchemePath: original.targetSchemePath,
+        eraserMasks: original.eraserMasks,
       );
     }
     return original;
@@ -858,9 +878,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     return Offset(screenX, screenY);
   }
 
-  void _eraseAtPoint(Offset canvasPoint, double eraserRadius) {
-    // Fix #6: throttle — не чаще одного раза за кадр (16 мс), иначе BLoC
-    // получает сотни событий в секунду и провоцирует подтормаживания.
+  void _applyLocalEraserStroke(List<Offset> rawCanvasPoints, double eraserWidth, EraserTarget target) {
     final now = DateTime.now();
     if (_lastEraseTime != null &&
         now.difference(_lastEraseTime!).inMilliseconds < 16) {
@@ -868,82 +886,46 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
     _lastEraseTime = now;
 
+    if (rawCanvasPoints.isEmpty) return;
+
     final state = context.read<DrawBloc>().state;
     final List<DrawAction> updatedHistory = List<DrawAction>.from(state.history);
     bool historyChanged = false;
 
-    for (int i = updatedHistory.length - 1; i >= 0; i--) {
+    for (int i = 0; i < updatedHistory.length; i++) {
       final action = updatedHistory[i];
-      final localObjPos = _canvasToObjectSpace(canvasPoint, action);
-      
+      if (action is EraserStrokeAction) continue;
+
+      final rawPt = rawCanvasPoints.first;
+      final schemeInfo = _getSchemeInfo(rawPt, state.backgroundPaths);
+      if (action.targetSchemePath != null && action.targetSchemePath != schemeInfo.targetSchemePath) {
+        continue;
+      }
+
+      final List<Offset> localPoints = [];
       final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
-      final double effectiveRadius = eraserRadius / (avgScale <= 0 ? 1.0 : avgScale);
+      final double effectiveWidth = eraserWidth / (avgScale <= 0 ? 1.0 : avgScale);
 
-      if (action is StrokeAction) {
-        // Быстрая проверка пересечения с bounding box штриха
-        final bounds = CanvasPainter.getOriginalActionBounds(action);
-        final threshold = effectiveRadius + (action.strokeWidth / 2);
-        final expandedRect = bounds.inflate(threshold);
-        if (!expandedRect.contains(localObjPos)) {
-          continue;
+      final bounds = CanvasPainter.getOriginalActionBounds(action).inflate(effectiveWidth * 4);
+
+      for (final pt in rawCanvasPoints) {
+        final localPt = _canvasToObjectSpace(pt, action);
+        if (bounds == Rect.zero || bounds.contains(localPt)) {
+          localPoints.add(localPt);
         }
+      }
 
-        // Проверяем, близко ли ластик к линии
-        final dist = _getDistanceToAction(localObjPos, action);
-        if (dist < threshold) {
-          // Разбиваем линию на непрерывные сегменты, исключая стёртые точки
-          final List<List<Offset>> segments = [];
-          List<Offset> currentSegment = [];
+      if (localPoints.isNotEmpty) {
+        final newMask = EraserMaskData(
+          localPoints: localPoints,
+          strokeWidth: effectiveWidth,
+          target: target,
+        );
+        final existingMasks = List<EraserMaskData>.from(action.eraserMasks ?? []);
+        existingMasks.add(newMask);
 
-          for (final pt in action.points) {
-            final double d = (pt - localObjPos).distance;
-            if (d < effectiveRadius) {
-              if (currentSegment.isNotEmpty) {
-                segments.add(currentSegment);
-                currentSegment = [];
-              }
-            } else {
-              currentSegment.add(pt);
-            }
-          }
-          if (currentSegment.isNotEmpty) {
-            segments.add(currentSegment);
-          }
-
-          // Удаляем старый штрих
-          updatedHistory.removeAt(i);
-          historyChanged = true;
-
-          // Добавляем новые сегменты на то же место
-          int insertIndex = i;
-          for (final segmentPoints in segments) {
-            if (segmentPoints.isNotEmpty) {
-              updatedHistory.insert(
-                insertIndex,
-                StrokeAction(
-                  id: _generateId(), // Fix #20: стабильный уникальный ID вместо хеша
-                  color: action.color,
-                  strokeWidth: action.strokeWidth,
-                  points: segmentPoints,
-                  isEraser: action.isEraser,
-                  brushType: action.brushType,
-                  scaleX: action.scaleX,
-                  scaleY: action.scaleY,
-                  offsetX: action.offsetX,
-                  offsetY: action.offsetY,
-                ),
-              );
-              insertIndex++;
-            }
-          }
-        }
-      } else {
-        // Для не-линий (фигур, штампов, стрелок) удаляем объект целиком при касании ластика
-        final dist = _getDistanceToAction(localObjPos, action);
-        if (dist < effectiveRadius) {
-          updatedHistory.removeAt(i);
-          historyChanged = true;
-        }
+        updatedHistory[i] = action.copyWithEraserMasks(existingMasks);
+        historyChanged = true;
       }
     }
 
@@ -1019,16 +1001,17 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
         if (selectedAction != null) {
           final originalBounds = CanvasPainter.getOriginalActionBounds(selectedAction);
-          const double threshold = 32.0; // экранные пиксели — не зависит от зума
+          const double cornerThreshold = 32.0; // экранные пиксели для углов
+          const double rotationHitThreshold = 48.0; // увеличенная область захвата вращения (экранные пиксели)
 
           final scaleY = selectedAction.scaleY.abs() == 0 ? 1.0 : selectedAction.scaleY.abs();
-          final rotationLocalPt = Offset(originalBounds.center.dx, originalBounds.top - (30.0 / scaleY));
+          final rotationLocalPt = Offset(originalBounds.center.dx, originalBounds.top - (36.0 / scaleY));
           final rotationCanvasPt = _schemeToCanvasSpace(CanvasPainter.getTransformedActionPoint(selectedAction, rotationLocalPt), selectedAction.targetSchemePath);
           final rotationScreenPt = _canvasToScreen(rotationCanvasPt);
 
           String? hitHandle;
 
-          if ((event.localPosition - rotationScreenPt).distance < threshold) {
+          if ((event.localPosition - rotationScreenPt).distance < rotationHitThreshold) {
             hitHandle = 'rotation';
           } else {
             final cornersLocal = <String, Offset>{
@@ -1040,7 +1023,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             for (final entry in cornersLocal.entries) {
               final canvasPt = _schemeToCanvasSpace(CanvasPainter.getTransformedActionPoint(selectedAction, entry.value), selectedAction.targetSchemePath);
               final screenPt = _canvasToScreen(canvasPt);
-              if ((event.localPosition - screenPt).distance < threshold) {
+              if ((event.localPosition - screenPt).distance < cornerThreshold) {
                 hitHandle = entry.key;
                 break;
               }
@@ -1057,7 +1040,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
             // Инициализируем данные для Paint-like resize (не нужно для rotation-handle)
             if (hitHandle != 'rotation') {
-              final action = selectedAction!;
+              final action = selectedAction;
               final origBounds = CanvasPainter.getOriginalActionBounds(action);
 
               // Определяем захваченный и anchor углы в LOCAL пространстве
@@ -1165,13 +1148,24 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
 
     if (state.currentTool == ToolType.eraser) {
+      _eraserCursorNotifier.value = event.localPosition;
       setState(() {
         _initialHistoryBeforeErase = List<DrawAction>.from(state.history);
         _hasErasedAnything = false;
-        _eraserCursorPosition = event.localPosition;
         _currentPoints = [rawCanvasPt];
+        if (state.eraserTarget == EraserTarget.everything) {
+          _activeAction = EraserStrokeAction(
+            id: id,
+            strokeWidth: state.currentStrokeWidth,
+            points: List<Offset>.from(_currentPoints),
+            target: state.eraserTarget,
+            targetSchemePath: targetPath,
+          );
+        } else {
+          _activeAction = null;
+        }
       });
-      _eraseAtPoint(rawCanvasPt, state.currentStrokeWidth / 2);
+      _applyLocalEraserStroke([rawCanvasPt], state.currentStrokeWidth, state.eraserTarget);
       return;
     }
 
@@ -1183,7 +1177,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     setState(() {
       if (state.currentTool == ToolType.pencil ||
           state.currentTool == ToolType.adhesions ||
-          state.currentTool == ToolType.fibrosis) {
+          state.currentTool == ToolType.fibrosis ||
+          state.currentTool == ToolType.spray) {
         // Инициализируем линию (штрих)
         _currentPoints = [localPosition];
         _activeAction = StrokeAction(
@@ -1196,7 +1191,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               ? 'adhesions'
               : state.currentTool == ToolType.fibrosis
                   ? 'fibrosis'
-                  : 'pencil',
+                  : state.currentTool == ToolType.spray
+                      ? 'spray'
+                      : 'pencil',
           isDashed: state.currentTool == ToolType.pencil ? state.currentLineDashed : false,
           targetSchemePath: targetPath,
         );
@@ -1205,7 +1202,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           state.currentTool == ToolType.infiltrate ||
           state.currentTool == ToolType.bowelInfiltrate ||
           state.currentTool == ToolType.adenomyosis ||
-          state.currentTool == ToolType.gui) {
+          state.currentTool == ToolType.gui ||
+          state.currentTool == ToolType.cyst) {
         // Овал (фигуры)
         _activeAction = ShapeAction(
           id: id,
@@ -1223,7 +1221,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                           ? 'bowelInfiltrate'
                           : state.currentTool == ToolType.gui
                               ? 'gui'
-                              : 'adenomyosis',
+                              : state.currentTool == ToolType.cyst
+                                  ? 'cyst'
+                                  : 'adenomyosis',
           figoType: state.currentTool == ToolType.myoma ? state.currentFigoType : null,
           targetSchemePath: targetPath,
         );
@@ -1272,6 +1272,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         );
       }
     });
+    // Синхронизируем notifier после setState, чтобы painter знал о начальном состоянии
+    _activeStrokeNotifier.value = _activeAction;
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -1287,11 +1289,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
     // Ластик: отслеживаем точки и позицию курсора
     if (state.currentTool == ToolType.eraser) {
-      setState(() {
-        _eraserCursorPosition = event.localPosition;
-        _currentPoints.add(rawCanvasPt);
-      });
-      _eraseAtPoint(rawCanvasPt, state.currentStrokeWidth / 2);
+      // Обновляем курсор через notifier — нет setState
+      _eraserCursorNotifier.value = event.localPosition;
+      _currentPoints.add(rawCanvasPt);
+      if (_activeAction is EraserStrokeAction) {
+        final updated = EraserStrokeAction(
+          id: _activeAction!.id,
+          strokeWidth: state.currentStrokeWidth,
+          points: List<Offset>.from(_currentPoints),
+          target: state.eraserTarget,
+          targetSchemePath: _activeAction!.targetSchemePath,
+        );
+        _activeAction = updated;
+        _activeStrokeNotifier.value = updated;
+      }
+      _applyLocalEraserStroke([rawCanvasPt], state.currentStrokeWidth, state.eraserTarget);
       return;
     }
 
@@ -1300,158 +1312,149 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (state.currentTool == ToolType.move) {
       if (_selectedActionId != null && _originalActionForDrag != null && _dragStartPoint != null) {
         final offset = localPosition - _dragStartPoint!;
-        setState(() {
-          if (_draggedHandle != null) {
-            // Текущие rendered-bounds (с учётом всех трансформаций) — нужны только для вращения
-            final currentBounds = CanvasPainter.getActionBounds(_originalActionForDrag!);
+        // Обновляем _activeAction напрямую, затем сигнализируем repaint — без setState
+        if (_draggedHandle != null) {
+          final currentBounds = CanvasPainter.getActionBounds(_originalActionForDrag!);
 
-            if (_draggedHandle == 'rotation') {
-              final center = currentBounds.center;
-              final double currentAngle = math.atan2(
-                localPosition.dy - center.dy,
-                localPosition.dx - center.dx,
+          if (_draggedHandle == 'rotation') {
+            final center = currentBounds.center;
+            final double currentAngle = math.atan2(
+              localPosition.dy - center.dy,
+              localPosition.dx - center.dx,
+            );
+            final double newRotation = currentAngle + math.pi / 2;
+
+            if (_originalActionForDrag is ShapeAction) {
+              final shape = _originalActionForDrag as ShapeAction;
+              _activeAction = ShapeAction(
+                id: shape.id,
+                color: shape.color,
+                strokeWidth: shape.strokeWidth,
+                startPoint: shape.startPoint,
+                endPoint: shape.endPoint,
+                shapeType: shape.shapeType,
+                figoType: shape.figoType,
+                rotation: newRotation,
+                scaleX: shape.scaleX,
+                scaleY: shape.scaleY,
+                offsetX: shape.offsetX,
+                offsetY: shape.offsetY,
+                targetSchemePath: shape.targetSchemePath,
+                eraserMasks: shape.eraserMasks,
               );
-              final double newRotation = currentAngle + math.pi / 2;
-
-              if (_originalActionForDrag is ShapeAction) {
-                final shape = _originalActionForDrag as ShapeAction;
-                _activeAction = ShapeAction(
-                  id: shape.id,
-                  color: shape.color,
-                  strokeWidth: shape.strokeWidth,
-                  startPoint: shape.startPoint,
-                  endPoint: shape.endPoint,
-                  shapeType: shape.shapeType,
-                  figoType: shape.figoType,
-                  rotation: newRotation,
-                  scaleX: shape.scaleX,
-                  scaleY: shape.scaleY,
-                  offsetX: shape.offsetX,
-                  offsetY: shape.offsetY,
-                  targetSchemePath: shape.targetSchemePath,
-                );
-              } else if (_originalActionForDrag is StampAction) {
-                final stamp = _originalActionForDrag as StampAction;
-                _activeAction = StampAction(
-                  id: stamp.id,
-                  color: stamp.color,
-                  strokeWidth: stamp.strokeWidth,
-                  position: stamp.position,
-                  stampType: stamp.stampType,
-                  customStampPath: stamp.customStampPath,
-                  rotation: newRotation,
-                  scaleX: stamp.scaleX,
-                  scaleY: stamp.scaleY,
-                  offsetX: stamp.offsetX,
-                  offsetY: stamp.offsetY,
-                  targetSchemePath: stamp.targetSchemePath,
-                );
-              }
-            } else {
-              // Paint-like resize: используем предвычисленные A, B, anchorCanvas из _onPointerDown.
-              //
-              // Прямое преобразование: canvas = rotate(local, rotCenter, angle) * scale + offset
-              // Угол вращения фиксирован. Нужно найти новые scaleX, scaleY, offsetX, offsetY.
-              //
-              // Система уравнений (cursor следует захваченному углу, anchor неподвижен):
-              //   cursor  = A * (newScaleX, newScaleY) + (newOffsetX, newOffsetY)
-              //   anchor  = B * (newScaleX, newScaleY) + (newOffsetX, newOffsetY)
-              // Откуда: newScaleX = (cursor.dx - anchor.dx) / (A.dx - B.dx)
-              //         newScaleY = (cursor.dy - anchor.dy) / (A.dy - B.dy)
-              //         newOffsetX = anchor.dx - B.dx * newScaleX
-              //         newOffsetY = anchor.dy - B.dy * newScaleY
-              if (_rotatedDraggedCorner != null && _rotatedAnchorCorner != null && _anchorCanvas != null) {
-                final action = _originalActionForDrag!;
-                final a = _rotatedDraggedCorner!;
-                final b = _rotatedAnchorCorner!;
-                final anchor = _anchorCanvas!;
-
-                // cursorCanvas = localPosition (cell offset уже вычтен одинаково с anchorCanvas)
-                final cursor = localPosition;
-
-                const double minScale = 0.05;
-                const double eps = 1e-6;
-
-                // newScaleX
-                final double denomX = a.dx - b.dx;
-                double newScaleX = denomX.abs() < eps
-                    ? (action.scaleX == 0 ? 1.0 : action.scaleX) // ось вырождена — сохраняем текущий scale
-                    : (cursor.dx - anchor.dx) / denomX;
-                newScaleX = newScaleX.clamp(minScale, double.infinity);
-
-                // newScaleY
-                final double denomY = a.dy - b.dy;
-                double newScaleY = denomY.abs() < eps
-                    ? (action.scaleY == 0 ? 1.0 : action.scaleY)
-                    : (cursor.dy - anchor.dy) / denomY;
-                newScaleY = newScaleY.clamp(minScale, double.infinity);
-
-                // Для кругов (endometrioma, myoma) — пропорциональный scale
-                if (action is ShapeAction &&
-                    (action.shapeType == 'endometrioma' || action.shapeType == 'myoma')) {
-                  final avg = (newScaleX + newScaleY) / 2;
-                  newScaleX = avg;
-                  newScaleY = avg;
-                }
-
-                // Offset так, чтобы anchor остался неподвижным
-                final double newOffsetX = anchor.dx - b.dx * newScaleX;
-                final double newOffsetY = anchor.dy - b.dy * newScaleY;
-
-                _activeAction = _applyScaleAndOffset(action, newScaleX, newScaleY, newOffsetX, newOffsetY);
-              }
+            } else if (_originalActionForDrag is StampAction) {
+              final stamp = _originalActionForDrag as StampAction;
+              _activeAction = StampAction(
+                id: stamp.id,
+                color: stamp.color,
+                strokeWidth: stamp.strokeWidth,
+                position: stamp.position,
+                stampType: stamp.stampType,
+                customStampPath: stamp.customStampPath,
+                rotation: newRotation,
+                scaleX: stamp.scaleX,
+                scaleY: stamp.scaleY,
+                offsetX: stamp.offsetX,
+                offsetY: stamp.offsetY,
+                targetSchemePath: stamp.targetSchemePath,
+                eraserMasks: stamp.eraserMasks,
+              );
             }
           } else {
-            _activeAction = _offsetAction(_originalActionForDrag!, offset);
+            if (_rotatedDraggedCorner != null && _rotatedAnchorCorner != null && _anchorCanvas != null) {
+              final action = _originalActionForDrag!;
+              final a = _rotatedDraggedCorner!;
+              final b = _rotatedAnchorCorner!;
+              final anchor = _anchorCanvas!;
+              final cursor = localPosition;
+
+              const double minScale = 0.05;
+              const double eps = 1e-6;
+
+              final double denomX = a.dx - b.dx;
+              double newScaleX = denomX.abs() < eps
+                  ? (action.scaleX == 0 ? 1.0 : action.scaleX)
+                  : (cursor.dx - anchor.dx) / denomX;
+              newScaleX = newScaleX.clamp(minScale, double.infinity);
+
+              final double denomY = a.dy - b.dy;
+              double newScaleY = denomY.abs() < eps
+                  ? (action.scaleY == 0 ? 1.0 : action.scaleY)
+                  : (cursor.dy - anchor.dy) / denomY;
+              newScaleY = newScaleY.clamp(minScale, double.infinity);
+
+              if (action is ShapeAction &&
+                  (action.shapeType == 'endometrioma' || action.shapeType == 'myoma')) {
+                final avg = (newScaleX + newScaleY) / 2;
+                newScaleX = avg;
+                newScaleY = avg;
+              }
+
+              final double newOffsetX = anchor.dx - b.dx * newScaleX;
+              final double newOffsetY = anchor.dy - b.dy * newScaleY;
+
+              _activeAction = _applyScaleAndOffset(action, newScaleX, newScaleY, newOffsetX, newOffsetY);
+            }
           }
-        });
+        } else {
+          _activeAction = _offsetAction(_originalActionForDrag!, offset);
+        }
+        // Сигнализируем repaint через notifier — без setState
+        _activeStrokeNotifier.value = _activeAction;
       }
       return;
     }
 
-    setState(() {
-      // Fix #15: используем толщину, зафиксированную в onPointerDown
-      final double strokeWidth = _activeStrokeWidth ?? state.currentStrokeWidth;
+    // Обновляем _activeAction напрямую (без setState), сигнализируем repaint через notifier.
+    // Это устраняет 60+ rebuilds/сек в виджет-дереве во время рисования.
+    final double strokeWidth = _activeStrokeWidth ?? state.currentStrokeWidth;
 
-      if (_activeAction is StrokeAction) {
+    if (_activeAction is StrokeAction) {
+      final stroke = _activeAction as StrokeAction;
+      if (stroke.brushType == 'spray') {
+        if (_currentPoints.isEmpty || (localPosition - _currentPoints.last).distance >= 4.0) {
+          _currentPoints.add(localPosition);
+        }
+      } else {
         _currentPoints.add(localPosition);
-        _activeAction = StrokeAction(
-          id: _activeAction!.id,
-          color: _activeAction!.color,
-          strokeWidth: strokeWidth,
-          points: List<Offset>.from(_currentPoints),
-          isEraser: false,
-          brushType: (_activeAction as StrokeAction).brushType,
-          isDashed: (_activeAction as StrokeAction).isDashed,
-          targetSchemePath: _activeAction!.targetSchemePath,
-        );
-      } else if (_activeAction is ShapeAction) {
-        final shape = _activeAction as ShapeAction;
-        _activeAction = ShapeAction(
-          id: shape.id,
-          color: shape.color,
-          strokeWidth: shape.strokeWidth,
-          startPoint: shape.startPoint,
-          endPoint: localPosition,
-          shapeType: shape.shapeType,
-          figoType: shape.figoType,
-          rotation: shape.rotation,
-          targetSchemePath: shape.targetSchemePath,
-        );
-      } else if (_activeAction is TextAction) {
-        final text = _activeAction as TextAction;
-        _activeAction = TextAction(
-          id: text.id,
-          color: text.color,
-          strokeWidth: text.strokeWidth,
-          startPoint: text.startPoint,
-          endPoint: localPosition,
-          text: text.text,
-          isDashed: text.isDashed,
-          targetSchemePath: text.targetSchemePath,
-        );
       }
-    });
+      _activeAction = StrokeAction(
+        id: _activeAction!.id,
+        color: _activeAction!.color,
+        strokeWidth: strokeWidth,
+        points: List<Offset>.from(_currentPoints),
+        isEraser: false,
+        brushType: stroke.brushType,
+        isDashed: stroke.isDashed,
+        targetSchemePath: _activeAction!.targetSchemePath,
+      );
+    } else if (_activeAction is ShapeAction) {
+      final shape = _activeAction as ShapeAction;
+      _activeAction = ShapeAction(
+        id: shape.id,
+        color: shape.color,
+        strokeWidth: shape.strokeWidth,
+        startPoint: shape.startPoint,
+        endPoint: localPosition,
+        shapeType: shape.shapeType,
+        figoType: shape.figoType,
+        rotation: shape.rotation,
+        targetSchemePath: shape.targetSchemePath,
+      );
+    } else if (_activeAction is TextAction) {
+      final text = _activeAction as TextAction;
+      _activeAction = TextAction(
+        id: text.id,
+        color: text.color,
+        strokeWidth: text.strokeWidth,
+        startPoint: text.startPoint,
+        endPoint: localPosition,
+        text: text.text,
+        isDashed: text.isDashed,
+        targetSchemePath: text.targetSchemePath,
+      );
+    }
+    _activeStrokeNotifier.value = _activeAction;
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -1476,13 +1479,17 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
     // Ластик: обрабатываем отдельно
     if (state.currentTool == ToolType.eraser) {
-      if (_hasErasedAnything) {
+      if (_activeAction is EraserStrokeAction && (_activeAction as EraserStrokeAction).points.isNotEmpty) {
+        context.read<DrawBloc>().add(AddActionEvent(_activeAction!));
+      } else if (_hasErasedAnything) {
         context.read<DrawBloc>().add(SaveUndoStateEvent(_initialHistoryBeforeErase));
       }
+      _activeStrokeNotifier.value = null;
+      _eraserCursorNotifier.value = event.localPosition;
       setState(() {
+        _activeAction = null;
         _initialHistoryBeforeErase = [];
         _hasErasedAnything = false;
-        _eraserCursorPosition = event.localPosition;
         _currentPoints = [];
       });
       return;
@@ -1493,9 +1500,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (state.currentTool == ToolType.move) {
       if (_selectedActionId != null && _activeAction != null) {
         context.read<DrawBloc>().add(UpdateActionEvent(_activeAction!));
+        _activeStrokeNotifier.value = null;
         setState(() {
-          // Fix #7: сохраняем финальное состояние как новую «оригинальную» точку отсчёта,
-          // чтобы следующий захват маркера не давал прыжка.
           _originalActionForDrag = _activeAction;
           _activeAction = null;
           _draggedHandle = null;
@@ -1568,6 +1574,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         _currentPoints = [];
         _activeStrokeWidth = null; // Fix #15: сбросить зафиксированную толщину
       });
+      _activeStrokeNotifier.value = null;
     }
   }
 
@@ -1731,12 +1738,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       case ToolType.pencil:
       case ToolType.adhesions:
       case ToolType.fibrosis:
+      case ToolType.spray:
       case ToolType.arrow:
         return SystemMouseCursors.precise;
       case ToolType.endometrioma:
       case ToolType.myoma:
       case ToolType.infiltrate:
       case ToolType.bowelInfiltrate:
+      case ToolType.cyst:
         return SystemMouseCursors.precise;
       case ToolType.iud:
       case ToolType.foci:
@@ -1753,10 +1762,12 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   // Оверлей курсора ластика (круг в экранных координатах)
   // ──────────────────────────────────────────────
 
-  Widget _buildEraserCursor(DrawState state) {
+  // Оверлей курсора ластика (круг в экранных координатах)
+  Widget _buildEraserCursor(DrawState state, Offset center) {
     // Радиус круга масштабируется вместе с холстом, но ограничен разумными рамками
     final double radius = (state.currentStrokeWidth / 2 * _scale).clamp(4.0, 120.0);
-    final center = _eraserCursorPosition!;
+    final isEverything = state.eraserTarget == EraserTarget.everything;
+
     return Positioned(
       left: center.dx - radius,
       top: center.dy - radius,
@@ -1766,8 +1777,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           height: radius * 2,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
+            color: isEverything ? Colors.orangeAccent.withValues(alpha: 0.08) : Colors.transparent,
             border: Border.all(
-              color: Colors.black54,
+              color: isEverything ? Colors.orangeAccent : const Color(0xFF0F4C81),
               width: 1.5,
             ),
           ),

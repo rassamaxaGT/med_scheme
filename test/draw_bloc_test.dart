@@ -51,6 +51,18 @@ void main() {
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.foci);
       expect(drawBloc.state.currentColor, const Color(0xFF880E4F));
+
+      // Cyst -> Sky Blue / Cyan
+      drawBloc.add(SelectToolEvent(ToolType.cyst));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.cyst);
+      expect(drawBloc.state.currentColor, const Color(0xFF03A9F4));
+
+      // Spray -> strokeWidth = 16.0
+      drawBloc.add(SelectToolEvent(ToolType.spray));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.spray);
+      expect(drawBloc.state.currentStrokeWidth, 16.0);
     });
 
 
@@ -251,5 +263,18 @@ void main() {
       expect(drawBloc.state.customSchemes.length, 1);
       expect(drawBloc.state.customSchemes.first.path, 'custom_path_2.jpg');
     });
+
+    test('SetEraserTargetEvent should update eraserTarget in state', () async {
+      expect(drawBloc.state.eraserTarget, EraserTarget.annotationsOnly);
+
+      drawBloc.add(SetEraserTargetEvent(EraserTarget.everything));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.eraserTarget, EraserTarget.everything);
+
+      drawBloc.add(SetEraserTargetEvent(EraserTarget.annotationsOnly));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.eraserTarget, EraserTarget.annotationsOnly);
+    });
   });
 }
+

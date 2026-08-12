@@ -149,3 +149,9 @@ class RemovePageEvent extends DrawEvent {
   final int pageIndex;
   RemovePageEvent(this.pageIndex);
 }
+
+class SetEraserTargetEvent extends DrawEvent {
+  final EraserTarget target;
+  SetEraserTargetEvent(this.target);
+}
+

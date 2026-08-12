@@ -17,8 +17,22 @@ enum ToolType {
   bowelInfiltrate,
   gui,
   follicle,
+  cyst, // киста (измеряемая по размеру, без заливки)
   adenomyosis,
-  polyp
+  polyp,
+  spray // баллончик / спрей
+}
+
+class EraserMaskData {
+  final List<Offset> localPoints;
+  final double strokeWidth;
+  final EraserTarget target;
+
+  EraserMaskData({
+    required this.localPoints,
+    required this.strokeWidth,
+    this.target = EraserTarget.annotationsOnly,
+  });
 }
 
 abstract class DrawAction {
@@ -30,6 +44,7 @@ abstract class DrawAction {
   final double offsetX;
   final double offsetY;
   final String? targetSchemePath;
+  final List<EraserMaskData>? eraserMasks;
 
   DrawAction({
     required this.id,
@@ -40,7 +55,10 @@ abstract class DrawAction {
     this.offsetX = 0.0,
     this.offsetY = 0.0,
     this.targetSchemePath,
+    this.eraserMasks,
   });
+
+  DrawAction copyWithEraserMasks(List<EraserMaskData> masks);
 }
 
 class StrokeAction extends DrawAction {
@@ -62,7 +80,27 @@ class StrokeAction extends DrawAction {
     super.offsetX,
     super.offsetY,
     super.targetSchemePath,
+    super.eraserMasks,
   });
+
+  @override
+  StrokeAction copyWithEraserMasks(List<EraserMaskData> masks) {
+    return StrokeAction(
+      id: id,
+      color: color,
+      strokeWidth: strokeWidth,
+      points: points,
+      isEraser: isEraser,
+      brushType: brushType,
+      isDashed: isDashed,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      targetSchemePath: targetSchemePath,
+      eraserMasks: masks,
+    );
+  }
 }
 
 class ShapeAction extends DrawAction {
@@ -86,7 +124,28 @@ class ShapeAction extends DrawAction {
     super.offsetX,
     super.offsetY,
     super.targetSchemePath,
+    super.eraserMasks,
   });
+
+  @override
+  ShapeAction copyWithEraserMasks(List<EraserMaskData> masks) {
+    return ShapeAction(
+      id: id,
+      color: color,
+      strokeWidth: strokeWidth,
+      startPoint: startPoint,
+      endPoint: endPoint,
+      shapeType: shapeType,
+      figoType: figoType,
+      rotation: rotation,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      targetSchemePath: targetSchemePath,
+      eraserMasks: masks,
+    );
+  }
 }
 
 class StampAction extends DrawAction {
@@ -108,7 +167,27 @@ class StampAction extends DrawAction {
     super.offsetX,
     super.offsetY,
     super.targetSchemePath,
+    super.eraserMasks,
   });
+
+  @override
+  StampAction copyWithEraserMasks(List<EraserMaskData> masks) {
+    return StampAction(
+      id: id,
+      color: color,
+      strokeWidth: strokeWidth,
+      position: position,
+      stampType: stampType,
+      customStampPath: customStampPath,
+      rotation: rotation,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      targetSchemePath: targetSchemePath,
+      eraserMasks: masks,
+    );
+  }
 }
 
 class TextAction extends DrawAction {
@@ -130,5 +209,68 @@ class TextAction extends DrawAction {
     super.offsetX,
     super.offsetY,
     super.targetSchemePath,
+    super.eraserMasks,
   });
+
+  @override
+  TextAction copyWithEraserMasks(List<EraserMaskData> masks) {
+    return TextAction(
+      id: id,
+      color: color,
+      strokeWidth: strokeWidth,
+      startPoint: startPoint,
+      endPoint: endPoint,
+      text: text,
+      isDashed: isDashed,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      targetSchemePath: targetSchemePath,
+      eraserMasks: masks,
+    );
+  }
 }
+
+enum EraserTarget {
+  /// Стирает только условные обозначения (маркеры, линии, фигуры), не трогая фоновый рисунок
+  annotationsOnly,
+
+  /// Стирает всё, включая линии фонового рисунка медицинской схемы
+  everything,
+}
+
+class EraserStrokeAction extends DrawAction {
+  final List<Offset> points;
+  final EraserTarget target;
+
+  EraserStrokeAction({
+    required super.id,
+    required super.strokeWidth,
+    required this.points,
+    this.target = EraserTarget.annotationsOnly,
+    super.scaleX,
+    super.scaleY,
+    super.offsetX,
+    super.offsetY,
+    super.targetSchemePath,
+    super.eraserMasks,
+  }) : super(color: const Color(0x00000000));
+
+  @override
+  EraserStrokeAction copyWithEraserMasks(List<EraserMaskData> masks) {
+    return EraserStrokeAction(
+      id: id,
+      strokeWidth: strokeWidth,
+      points: points,
+      target: target,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      offsetX: offsetX,
+      offsetY: offsetY,
+      targetSchemePath: targetSchemePath,
+      eraserMasks: masks,
+    );
+  }
+}
+

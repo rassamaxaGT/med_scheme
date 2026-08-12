@@ -147,6 +147,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         strokeWidth = 2.0;
       } else if (event.tool == ToolType.arrow) {
         strokeWidth = 1.5;
+      } else if (event.tool == ToolType.spray) {
+        strokeWidth = 16.0;
       } else if (event.tool == ToolType.foci ||
           event.tool == ToolType.follicle ||
           event.tool == ToolType.polyp ||
@@ -167,6 +169,10 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
 
     on<ChangeStrokeWidthEvent>((event, emit) {
       emit(state.copyWith(currentStrokeWidth: event.strokeWidth));
+    });
+
+    on<SetEraserTargetEvent>((event, emit) {
+      emit(state.copyWith(eraserTarget: event.target));
     });
 
     // ── Удалить конкретное действие ───────────────────────────────────────
@@ -342,7 +348,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       case ToolType.gui:
         return const Color(0xFF8E24AA); // Purple
       case ToolType.follicle:
-        return const Color(0xFF03A9F4); // Light Blue
+      case ToolType.cyst:
+        return const Color(0xFF03A9F4); // Light Blue / Cyan
       case ToolType.adenomyosis:
         return const Color(0xFF880E4F); // Cherry
       case ToolType.polyp:
