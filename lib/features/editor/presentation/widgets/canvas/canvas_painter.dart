@@ -59,25 +59,34 @@ class CanvasPainter extends CustomPainter {
        // Когда передан notifier — painter слушает его и перерисовывается без setState
        super(repaint: activeActionNotifier);
 
-  static Size getOriginalSchemeSize(String path) {
+  static Size getOriginalSchemeSize(String path, [ui.Image? image]) {
+    if (image != null && image.width > 0 && image.height > 0) {
+      return Size(image.width.toDouble(), image.height.toDouble());
+    }
     if (path == 'assets/schemes/standart_endo.jpg') {
       return const Size(907.0, 1280.0);
+    }
+    if (path == 'assets/schemes/sagittally.jpg') {
+      return const Size(800.0, 566.0);
+    }
+    if (path == 'assets/schemes/uterus.jpg') {
+      return const Size(1280.0, 905.0);
     }
     return const Size(800.0, 600.0);
   }
 
-  static double getSchemeAspectRatio(String path) {
-    final size = getOriginalSchemeSize(path);
+  static double getSchemeAspectRatio(String path, [ui.Image? image]) {
+    final size = getOriginalSchemeSize(path, image);
     return size.width / size.height;
   }
 
-  static Size getCanvasBaseSize(List<String> paths) {
+  static Size getCanvasBaseSize(List<String> paths, [Map<String, ui.Image>? bgImages]) {
     if (paths.isEmpty) return const Size(800.0, 600.0);
     final count = paths.length;
 
-    final double col0W = 600.0 * getSchemeAspectRatio(paths[0]);
+    final double col0W = 600.0 * getSchemeAspectRatio(paths[0], bgImages?[paths[0]]);
     final double col1W = (paths.length > 1)
-        ? 600.0 * getSchemeAspectRatio(paths[1])
+        ? 600.0 * getSchemeAspectRatio(paths[1], bgImages?[paths[1]])
         : 0.0;
 
     final int cols = count <= 1 ? 1 : 2;
@@ -89,18 +98,66 @@ class CanvasPainter extends CustomPainter {
   }
 
   static Rect getDrawRect(Size containerSize, Size baseSize) {
-    final double drawHeight = containerSize.height;
-    final double drawWidth = drawHeight * (baseSize.width / baseSize.height);
+    if (containerSize.width <= 0 ||
+        containerSize.height <= 0 ||
+        baseSize.width <= 0 ||
+        baseSize.height <= 0) {
+      return Rect.fromLTWH(0, 0, containerSize.width, containerSize.height);
+    }
+    final double scale = math.min(
+      containerSize.width / baseSize.width,
+      containerSize.height / baseSize.height,
+    );
+    final double drawWidth = baseSize.width * scale;
+    final double drawHeight = baseSize.height * scale;
 
-    final double left = drawWidth < containerSize.width
-        ? (containerSize.width - drawWidth) / 2
-        : 0.0;
-    const double top = 0.0;
+    final double left = (containerSize.width - drawWidth) / 2;
+    final double top = (containerSize.height - drawHeight) / 2;
 
     return Rect.fromLTWH(left, top, drawWidth, drawHeight);
   }
 
+  /// Возвращает точный Rect размещения изображения схемы в координатах unscaled base canvas (0..bgSize.width, 0..bgSize.height)
+  static Rect getSchemeImageRect({
+    required String path,
+    required List<String> activePaths,
+    Map<String, ui.Image>? bgImages,
+  }) {
+    final idx = activePaths.indexOf(path);
+    if (idx == -1) return Rect.zero;
+
+    final count = activePaths.length;
+    final int cols = count <= 1 ? 1 : 2;
+
+    final double col0W = 600.0 * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0], bgImages?[activePaths[0]]);
+    final double col1W = (activePaths.length > 1)
+        ? 600.0 * getSchemeAspectRatio(activePaths[1], bgImages?[activePaths[1]])
+        : 0.0;
+
+    final int col = idx % cols;
+    final int row = idx ~/ cols;
+
+    final double cellW = col == 0 ? col0W : col1W;
+    const double cellH = 600.0;
+    final double cellLeft = col == 0 ? 0.0 : col0W;
+    final double cellTop = row * cellH;
+
+    final origSize = getOriginalSchemeSize(path, bgImages?[path]);
+    final double s = math.min(cellW / origSize.width, cellH / origSize.height);
+
+    final double renderedW = origSize.width * s;
+    final double renderedH = origSize.height * s;
+
+    final double imgLeft = cellLeft + (cellW - renderedW) / 2;
+    final double imgTop = cellTop + (cellH - renderedH) / 2;
+
+    return Rect.fromLTWH(imgLeft, imgTop, renderedW, renderedH);
+  }
+
   static String getSchemeTitle(String path) {
+    if (path.contains('standart_endo')) return 'Эндометриоз — Исходник';
+    if (path.contains('sagittally')) return 'Сагиттально';
+    if (path.contains('uterus')) return 'Матка';
     if (path.contains('pelvis_ls')) return 'Таз — LS view';
     if (path.contains('pelvis_sagittal')) return 'Таз — Сагиттальный срез';
     if (path.contains('pelvis_anterior')) return 'Таз — Передняя стенка';
@@ -285,10 +342,10 @@ class CanvasPainter extends CustomPainter {
         ? backgroundPaths
         : (backgroundPath != null ? [backgroundPath!] : const <String>[]);
 
-    final bgSize = getCanvasBaseSize(activePaths);
+    final bgSize = getCanvasBaseSize(activePaths, bgImages);
     final drawRect = getDrawRect(size, bgSize);
 
-    // 1. Отрисовка фонового слоя схем
+    // 1. Отрисовка фонового слоя схем (белый лист с полями)
     final bgPaint = Paint()..color = Colors.white;
     canvas.drawRect(drawRect, bgPaint);
 
@@ -306,9 +363,9 @@ class CanvasPainter extends CustomPainter {
       final int rows = count <= 2 ? 1 : (count / 2).ceil();
       final double cellH = drawRect.height / rows;
 
-      final double col0W = cellH * getSchemeAspectRatio(activePaths[0]);
+      final double col0W = cellH * getSchemeAspectRatio(activePaths[0], bgImages[activePaths[0]]);
       final double col1W = (activePaths.length > 1)
-          ? cellH * getSchemeAspectRatio(activePaths[1])
+          ? cellH * getSchemeAspectRatio(activePaths[1], bgImages[activePaths[1]])
           : 0.0;
 
       final gridDividerPaint = Paint()
@@ -329,15 +386,15 @@ class CanvasPainter extends CustomPainter {
 
         final path = activePaths[i];
         final ui.Image? bgImg = bgImages[path] ?? backgroundImage;
-        if (bgImg != null &&
-            (bgImages.containsKey(path) ||
-                path == 'assets/schemes/standart_endo.jpg' ||
-                !path.startsWith('assets/schemes/'))) {
+        if (bgImg != null) {
+          // Заливаем ячейку белым цветом подложки (белые поля вокруг изображения)
+          canvas.drawRect(cellRect, bgPaint);
           paintImage(
             canvas: canvas,
             rect: cellRect,
             image: bgImg,
-            fit: BoxFit.fill,
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
           );
         } else {
           _drawSchemePlaceholderBadge(canvas, cellRect, path);
@@ -355,22 +412,21 @@ class CanvasPainter extends CustomPainter {
         drawRect.height / bgSize.height,
       );
 
-      final count = activePaths.length;
-      final int cols = count <= 1 ? 1 : 2;
-      final double col0WOrig =
-          600.0 *
-          getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
-
       for (int i = 0; i < activePaths.length; i++) {
         final path = activePaths[i];
-        final int col = i % cols;
-        final int row = i ~/ cols;
-        final cellOffset = Offset(col == 0 ? 0.0 : col0WOrig, row * 600.0);
-        final origHeight = getOriginalSchemeSize(path).height;
+        final imgRect = getSchemeImageRect(
+          path: path,
+          activePaths: activePaths,
+          bgImages: bgImages,
+        );
+        if (imgRect == Rect.zero) continue;
+
+        final origSize = getOriginalSchemeSize(path, bgImages[path]);
+        final double s = imgRect.width / origSize.width;
 
         canvas.save();
-        canvas.translate(cellOffset.dx, cellOffset.dy);
-        canvas.scale(600.0 / origHeight);
+        canvas.translate(imgRect.left, imgRect.top);
+        canvas.scale(s, s);
 
         for (final action in history) {
           if (action is EraserStrokeAction &&
@@ -405,24 +461,21 @@ class CanvasPainter extends CustomPainter {
 
     canvas.saveLayer(Rect.fromLTWH(0, 0, bgSize.width, bgSize.height), Paint());
 
-    final count = activePaths.length;
-    final int cols = count <= 1 ? 1 : 2;
-    final double col0WOrig =
-        600.0 * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
-
     for (int i = 0; i < activePaths.length; i++) {
       final path = activePaths[i];
-      final int col = i % cols;
-      final int row = i ~/ cols;
+      final imgRect = getSchemeImageRect(
+        path: path,
+        activePaths: activePaths,
+        bgImages: bgImages,
+      );
+      if (imgRect == Rect.zero) continue;
 
-      final double cellLeft = col == 0 ? 0.0 : col0WOrig;
-      final double cellTop = row * 600.0;
-
-      final double origHeight = getOriginalSchemeSize(path).height;
+      final origSize = getOriginalSchemeSize(path, bgImages[path]);
+      final double s = imgRect.width / origSize.width;
 
       canvas.save();
-      canvas.translate(cellLeft, cellTop);
-      canvas.scale(600.0 / origHeight);
+      canvas.translate(imgRect.left, imgRect.top);
+      canvas.scale(s, s);
 
       for (final action in history) {
         if (action.targetSchemePath == path) {
@@ -474,13 +527,8 @@ class CanvasPainter extends CustomPainter {
         ? backgroundPaths
         : (backgroundPath != null ? [backgroundPath!] : const <String>[]);
 
-    final bgSize = getCanvasBaseSize(activePaths);
+    final bgSize = getCanvasBaseSize(activePaths, bgImages);
     final drawRect = getDrawRect(size, bgSize);
-
-    final count = activePaths.length;
-    final int cols = count <= 1 ? 1 : 2;
-    final double col0WOrig =
-        600.0 * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0]);
 
     canvas.save();
     canvas.clipRect(drawRect);
@@ -494,16 +542,18 @@ class CanvasPainter extends CustomPainter {
     if (activeAction != null && activeAction!.id != selectedActionId) {
       final path = activeAction!.targetSchemePath;
       if (path != null) {
-        final schemeIndex = activePaths.indexOf(path);
-        if (schemeIndex != -1) {
-          final int col = schemeIndex % cols;
-          final int row = schemeIndex ~/ cols;
-          final cellOffset = Offset(col == 0 ? 0.0 : col0WOrig, row * 600.0);
-          final double origHeight = getOriginalSchemeSize(path).height;
+        final imgRect = getSchemeImageRect(
+          path: path,
+          activePaths: activePaths,
+          bgImages: bgImages,
+        );
+        if (imgRect != Rect.zero) {
+          final origSize = getOriginalSchemeSize(path, bgImages[path]);
+          final double s = imgRect.width / origSize.width;
 
           canvas.save();
-          canvas.translate(cellOffset.dx, cellOffset.dy);
-          canvas.scale(600.0 / origHeight);
+          canvas.translate(imgRect.left, imgRect.top);
+          canvas.scale(s, s);
           _drawAction(canvas, activeAction!);
           canvas.restore();
         }
@@ -521,21 +571,20 @@ class CanvasPainter extends CustomPainter {
         } catch (_) {}
       }
       if (selectedAction != null) {
-        if (selectedAction.targetSchemePath != null) {
-          final schemeIndex = activePaths.indexOf(
-            selectedAction.targetSchemePath!,
+        final path = selectedAction.targetSchemePath;
+        if (path != null) {
+          final imgRect = getSchemeImageRect(
+            path: path,
+            activePaths: activePaths,
+            bgImages: bgImages,
           );
-          if (schemeIndex != -1) {
-            final int col = schemeIndex % cols;
-            final int row = schemeIndex ~/ cols;
-            final cellOffset = Offset(col == 0 ? 0.0 : col0WOrig, row * 600.0);
-            final double origHeight = getOriginalSchemeSize(
-              selectedAction.targetSchemePath!,
-            ).height;
+          if (imgRect != Rect.zero) {
+            final origSize = getOriginalSchemeSize(path, bgImages[path]);
+            final double s = imgRect.width / origSize.width;
 
             canvas.save();
-            canvas.translate(cellOffset.dx, cellOffset.dy);
-            canvas.scale(600.0 / origHeight);
+            canvas.translate(imgRect.left, imgRect.top);
+            canvas.scale(s, s);
             _drawAction(canvas, selectedAction);
             _drawSelectionBorder(canvas, selectedAction);
             canvas.restore();
@@ -570,8 +619,15 @@ class CanvasPainter extends CustomPainter {
       double w = 40.0;
       double h = 40.0;
       if (action.stampType == 'iud') {
-        w = 29.0;
-        h = 36.0;
+        final double scale = action.strokeWidth / 8.0;
+        w = 29.0 * scale;
+        h = 36.0 * scale;
+        return Rect.fromLTWH(
+          action.position.dx - w / 2,
+          action.position.dy,
+          w,
+          h,
+        ).inflate(8.0);
       } else if (action.stampType == 'foci') {
         final radius = action.strokeWidth * 2;
         w = radius * 2;
@@ -603,17 +659,29 @@ class CanvasPainter extends CustomPainter {
 
   static Rect getActionBounds(DrawAction action) {
     final original = getOriginalActionBounds(action);
-    final double x1 = original.left * action.scaleX + action.offsetX;
-    final double y1 = original.top * action.scaleY + action.offsetY;
-    final double x2 = original.right * action.scaleX + action.offsetX;
-    final double y2 = original.bottom * action.scaleY + action.offsetY;
+    if (original == Rect.zero) return Rect.zero;
 
-    return Rect.fromLTRB(
-      math.min(x1, x2),
-      math.min(y1, y2),
-      math.max(x1, x2),
-      math.max(y1, y2),
-    );
+    final corners = [
+      original.topLeft,
+      original.topRight,
+      original.bottomRight,
+      original.bottomLeft,
+    ];
+
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = -double.infinity;
+    double maxY = -double.infinity;
+
+    for (final corner in corners) {
+      final pt = getTransformedActionPoint(action, corner);
+      if (pt.dx < minX) minX = pt.dx;
+      if (pt.dy < minY) minY = pt.dy;
+      if (pt.dx > maxX) maxX = pt.dx;
+      if (pt.dy > maxY) maxY = pt.dy;
+    }
+
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
   static Offset getTransformedActionPoint(
@@ -635,22 +703,25 @@ class CanvasPainter extends CustomPainter {
       rotationCenter = action.position;
     }
 
-    Offset p = localPoint;
+    // 1. Локальное масштабирование относительно центра объекта
+    final double sx = action.scaleX == 0 ? 1.0 : action.scaleX;
+    final double sy = action.scaleY == 0 ? 1.0 : action.scaleY;
+    final double localDx = (localPoint.dx - rotationCenter.dx) * sx;
+    final double localDy = (localPoint.dy - rotationCenter.dy) * sy;
+
+    // 2. Вращение масштабированной точки вокруг центра объекта
+    Offset rotated = Offset(localDx, localDy);
     if (rotation != 0.0) {
-      final dx = p.dx - rotationCenter.dx;
-      final dy = p.dy - rotationCenter.dy;
       final cosA = math.cos(rotation);
       final sinA = math.sin(rotation);
-      p = Offset(
-        rotationCenter.dx + dx * cosA - dy * sinA,
-        rotationCenter.dy + dx * sinA + dy * cosA,
+      rotated = Offset(
+        localDx * cosA - localDy * sinA,
+        localDx * sinA + localDy * cosA,
       );
     }
 
-    return Offset(
-      p.dx * action.scaleX + action.offsetX,
-      p.dy * action.scaleY + action.offsetY,
-    );
+    // 3. Возврат к центру + глобальный offset
+    return rotationCenter + rotated + Offset(action.offsetX, action.offsetY);
   }
 
   void _drawSelectionBorder(Canvas canvas, DrawAction action) {
@@ -673,13 +744,12 @@ class CanvasPainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(action.offsetX, action.offsetY);
-    canvas.scale(action.scaleX, action.scaleY);
-
+    canvas.translate(rotationCenter.dx, rotationCenter.dy);
     if (rotation != 0.0) {
-      canvas.translate(rotationCenter.dx, rotationCenter.dy);
       canvas.rotate(rotation);
-      canvas.translate(-rotationCenter.dx, -rotationCenter.dy);
     }
+    canvas.scale(action.scaleX, action.scaleY);
+    canvas.translate(-rotationCenter.dx, -rotationCenter.dy);
 
     final double avgScale = ((action.scaleX.abs() + action.scaleY.abs()) / 2)
         .clamp(0.1, 10.0);
@@ -712,13 +782,18 @@ class CanvasPainter extends CustomPainter {
     final corners = [
       originalBounds.topLeft,
       originalBounds.topRight,
-      originalBounds.bottomLeft,
       originalBounds.bottomRight,
+      originalBounds.bottomLeft,
     ];
 
     for (final corner in corners) {
-      canvas.drawCircle(corner, handleSize / 2, handlePaint);
-      canvas.drawCircle(corner, handleSize / 2, handleBorderPaint);
+      final handleRect = Rect.fromCenter(
+        center: corner,
+        width: handleSize,
+        height: handleSize,
+      );
+      canvas.drawRect(handleRect, handlePaint);
+      canvas.drawRect(handleRect, handleBorderPaint);
     }
 
     // Маркер вращения — крупная круглая кнопка с иконкой поворота
@@ -818,21 +893,27 @@ class CanvasPainter extends CustomPainter {
     }
 
     canvas.save();
-    // Трансформация: rendered_p = p * scale + offset
     canvas.translate(action.offsetX, action.offsetY);
-    canvas.scale(action.scaleX, action.scaleY);
 
-    if (action is ShapeAction && action.rotation != 0.0) {
-      final rect = Rect.fromPoints(action.startPoint, action.endPoint);
-      final center = rect.center;
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(action.rotation);
-      canvas.translate(-center.dx, -center.dy);
-    } else if (action is StampAction && action.rotation != 0.0) {
-      canvas.translate(action.position.dx, action.position.dy);
-      canvas.rotate(action.rotation);
-      canvas.translate(-action.position.dx, -action.position.dy);
+    double rotation = 0.0;
+    Offset center = Offset.zero;
+    if (action is ShapeAction) {
+      rotation = action.rotation;
+      center = Rect.fromPoints(action.startPoint, action.endPoint).center;
+    } else if (action is StampAction) {
+      rotation = action.rotation;
+      center = action.position;
+    } else {
+      final origBounds = getOriginalActionBounds(action);
+      center = origBounds.center;
     }
+
+    canvas.translate(center.dx, center.dy);
+    if (rotation != 0.0) {
+      canvas.rotate(rotation);
+    }
+    canvas.scale(action.scaleX, action.scaleY);
+    canvas.translate(-center.dx, -center.dy);
 
     final hasLocalMasks =
         action.eraserMasks != null && action.eraserMasks!.isNotEmpty;
@@ -1627,16 +1708,18 @@ class CanvasPainter extends CustomPainter {
 
   void _drawStamp(Canvas canvas, StampAction stamp) {
     if (stamp.stampType == 'iud') {
-      // Рисуем ВМС
+      // Рисуем ВМС с масштабированием
+      final double scale = stamp.strokeWidth / 8.0;
+      final double width = 29.0 * scale;
+      final double height = 36.0 * scale;
+
       final paint = Paint()
         ..color = stamp.color
-        ..strokeWidth = 3.0
+        ..strokeWidth = (3.0 * scale).clamp(1.5, 6.0)
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
 
       final center = stamp.position;
-      final double width = 29.0;
-      final double height = 36.0;
 
       canvas.drawLine(
         Offset(center.dx - width / 2, center.dy),

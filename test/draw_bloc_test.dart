@@ -63,6 +63,13 @@ void main() {
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.spray);
       expect(drawBloc.state.currentStrokeWidth, 16.0);
+
+      // IUD -> Black color, strokeWidth = 8.0
+      drawBloc.add(SelectToolEvent(ToolType.iud));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.iud);
+      expect(drawBloc.state.currentColor, const Color(0xFF000000));
+      expect(drawBloc.state.currentStrokeWidth, 8.0);
     });
 
 
@@ -274,6 +281,31 @@ void main() {
       drawBloc.add(SetEraserTargetEvent(EraserTarget.annotationsOnly));
       await drawBloc.stream.first;
       expect(drawBloc.state.eraserTarget, EraserTarget.annotationsOnly);
+    });
+
+    test('ResetProjectEvent should reset state to initial state', () async {
+      final action = StrokeAction(
+        id: '1',
+        color: Colors.blue,
+        strokeWidth: 4.0,
+        points: const [Offset(10, 10), Offset(20, 20)],
+      );
+      drawBloc.add(AddActionEvent(action));
+      await drawBloc.stream.first;
+      drawBloc.add(SetPatientIdEvent('PATIENT-123'));
+      await drawBloc.stream.first;
+
+      expect(drawBloc.state.history, isNotEmpty);
+      expect(drawBloc.state.patientId, 'PATIENT-123');
+
+      drawBloc.add(ResetProjectEvent());
+      await drawBloc.stream.first;
+
+      expect(drawBloc.state.history, isEmpty);
+      expect(drawBloc.state.patientId, isEmpty);
+      expect(drawBloc.state.undoStack, isEmpty);
+      expect(drawBloc.state.redoStack, isEmpty);
+      expect(drawBloc.state.pages.length, 2);
     });
   });
 }

@@ -1,6 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
+- **Version**: 1.0.9 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform drawing and annotation application designed for ultrasound (УЗИ) physicians. It operates like a "medical coloring book", enabling doctors to manually annotate standardized anatomical templates or imported scan images with markers for pathologies (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps). It works fully locally on the client device.
 - **Key Dependencies**:
@@ -30,7 +31,7 @@
         - [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/draw_action.dart): Defines [DrawAction] objects representing tools (pencil, shape, stamp, text/arrow annotations).
         - [page_data.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/page_data.dart): Multi-canvas entity containing canvas properties, canvas history (draw actions list), and local undo/redo stacks.
         - [project_data.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/project_data.dart): Entity aggregating metadata (e.g. Patient ID) and multiple page targets.
-        - [project_file_source.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/project_file_source.dart): abstraction for active file storage info.
+        - [project_file_source.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/entities/project_file_source.dart): Abstraction for active file storage info.
         - [project_repository.dart](file:///d:/projects/med_scheme/lib/features/editor/domain/repositories/project_repository.dart): Interface defining save, load, and export endpoints.
       - `/data`: Implementations of domain models and repositories:
         - [draw_action_model.dart](file:///d:/projects/med_scheme/lib/features/editor/data/models/draw_action_model.dart): JSON mapping/serialization layer for [DrawAction] shapes and markers.
@@ -101,13 +102,15 @@ File: [draw_action.dart](file:///d:/projects/med_scheme/lib/features/editor/doma
 ---
 
 ## 7. Active Development Context
-- **Current Goals/Tasks**: The core feature set (v2.0 Upgrade Plan) has been fully implemented, covering:
+- **Current Goals/Tasks**: Version 1.0.9 optimization and maintenance:
   - Multi-canvas tab navigation.
   - Advanced shape drawing and stamp rotation tools.
   - Specific clinical markings (Indian Headress, follicles, adenomyosis, polyps, bowel infiltrates).
   - Web deployments and platform sandboxing.
-- **Recent Modifying Commits**:
-  - `d5106e5` — Relocated project configuration controls to the global AppBar.
-  - `3cc4d81` — Render optimization for canvas spikes.
-  - `e9c2414` — Cleaned up build/runtime version labels.
-- **Verification Status**: High coverage unit and widget tests pass successfully via `flutter test`.
+- **Recent Commits**:
+  - `de0a9d4` — правки по версии 1.0.8 и глобальная оптимизация (v1.0.9)
+  - `7dc9a2e` — фикс сохранение разметки при сохранении проекта (v1.0.8)
+  - `61507fd` — доработка условных обозначений и мультихолста (v1.0.7)
+  - `d5106e5` — работа с проектом и файлами перенесена в аппбар (v1.0.6)
+  - `3cc4d81` — Оптимизация фпс на спайках (v1.0.5)
+- **Verification Status**: High coverage unit and widget tests (13/13) pass cleanly via `flutter test`.

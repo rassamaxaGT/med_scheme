@@ -73,6 +73,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   String _appVersion = '';
   Timer? _autoSaveTimer;
+  VoidCallback? _pendingActionAfterSave;
 
   double _safeClamp(double value, double min, double max) {
     if (min > max) return min;
@@ -361,6 +362,9 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
               onSelected: (value) {
                 switch (value) {
+                  case 'new':
+                    _createNewProject(context);
+                    break;
                   case 'open':
                     _openProject(context);
                     break;
@@ -385,6 +389,16 @@ class _EditorScreenState extends State<EditorScreen> {
                 final drawState = context.read<DrawBloc>().state;
                 final hasBg = drawState.backgroundPath != null;
                 return [
+                  const PopupMenuItem(
+                    value: 'new',
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_box_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Создать проект'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'open',
                     child: Row(
@@ -663,6 +677,11 @@ class _EditorScreenState extends State<EditorScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Проект успешно сохранён!')),
                 );
+                if (_pendingActionAfterSave != null) {
+                  final action = _pendingActionAfterSave!;
+                  _pendingActionAfterSave = null;
+                  action();
+                }
               } else if (state is ProjectExported) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1236,6 +1255,72 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _performCreateNewProject(BuildContext context) {
+    context.read<DrawBloc>().add(ResetProjectEvent());
+    context.read<ProjectBloc>().add(ResetProjectStateEvent());
+    _patientIdController.clear();
+    setState(() {
+      _savedHistoryIds = null;
+      _lastSavedBackgroundPath = null;
+    });
+    _clearDraft();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Создан новый проект')),
+    );
+  }
+
+  void _createNewProject(BuildContext context) async {
+    final drawState = context.read<DrawBloc>().state;
+    final hasActions = drawState.pages.any((p) => p.history.isNotEmpty);
+    final hasPatient = drawState.patientId.isNotEmpty;
+    final hasCustomSchemes = drawState.customSchemes.isNotEmpty;
+    final isNotEmpty = hasActions || hasPatient || hasCustomSchemes;
+
+    if (_hasUnsavedChanges() || isNotEmpty) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Создать новый проект'),
+          content: const Text(
+            'Текущий проект содержит данные.\n\n'
+            'Сохранить текущий проект перед созданием нового, или начать с чистого листа?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+              ),
+              onPressed: () => Navigator.pop(ctx, 'discard'),
+              child: const Text('Не сохранять'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F4C81),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(ctx, 'save'),
+              child: const Text('Сохранить и создать'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted) return;
+      if (choice == 'discard') {
+        _performCreateNewProject(context);
+      } else if (choice == 'save') {
+        _pendingActionAfterSave = () => _performCreateNewProject(context);
+        _showSaveDialog(context);
+      }
+    } else {
+      _performCreateNewProject(context);
+    }
+  }
+
   void _openProject(BuildContext context) async {
     try {
       if (_hasUnsavedChanges()) {
@@ -1356,6 +1441,11 @@ class _EditorScreenState extends State<EditorScreen> {
     }
     if (isCtrl && isShift && event.logicalKey == LogicalKeyboardKey.keyZ) {
       drawBloc.add(RedoEvent());
+      return true;
+    }
+
+    if (isCtrl && !isShift && event.logicalKey == LogicalKeyboardKey.keyN) {
+      _createNewProject(context);
       return true;
     }
 
@@ -1582,15 +1672,11 @@ class _SchemeSelector extends StatelessWidget {
           },
           {
             'title': 'Сагиттально',
-            'path': 'assets/schemes/uterus_sagittal.png',
+            'path': 'assets/schemes/sagittally.jpg',
           },
           {
-            'title': 'Фронтально',
-            'path': 'assets/schemes/uterus_frontal.png',
-          },
-          {
-            'title': 'Поперечно',
-            'path': 'assets/schemes/uterus_transverse.png',
+            'title': 'Матка',
+            'path': 'assets/schemes/uterus.jpg',
           },
         ];
 

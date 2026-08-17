@@ -155,3 +155,6 @@ class SetEraserTargetEvent extends DrawEvent {
   SetEraserTargetEvent(this.target);
 }
 
+class ResetProjectEvent extends DrawEvent {}
+
+

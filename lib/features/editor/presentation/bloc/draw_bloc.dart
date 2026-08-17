@@ -153,7 +153,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           event.tool == ToolType.follicle ||
           event.tool == ToolType.polyp ||
           event.tool == ToolType.gui ||
-          event.tool == ToolType.customStamp) {
+          event.tool == ToolType.customStamp ||
+          event.tool == ToolType.iud) {
         strokeWidth = 8.0;
       }
       emit(state.copyWith(
@@ -256,6 +257,7 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           pages: event.pages,
           currentPageIndex: event.currentPageIndex ?? 0,
           patientId: event.patientId,
+          customSchemes: event.customSchemes ?? [],
         ));
       } else {
         final singlePage = PageData(
@@ -269,8 +271,14 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           pages: [singlePage],
           currentPageIndex: 0,
           patientId: event.patientId,
+          customSchemes: event.customSchemes ?? [],
         ));
       }
+    });
+
+    // ── Сброс к чистому новому проекту ──────────────────────────────────
+    on<ResetProjectEvent>((event, emit) {
+      emit(DrawState.initial());
     });
 
     // ── События мультистраничности ──────────────────────────────────────────
@@ -293,9 +301,9 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       final defaultBgPaths = event.backgroundPath != null
           ? [event.backgroundPath!]
           : (event.pageType == 'pelvis'
-              ? ['assets/schemes/pelvis_ls.png']
+              ? ['assets/schemes/standart_endo.jpg']
               : (event.pageType == 'uterus'
-                  ? ['assets/schemes/uterus_sagittal.png']
+                  ? ['assets/schemes/uterus.jpg']
                   : const <String>[]));
 
       final newPage = PageData(

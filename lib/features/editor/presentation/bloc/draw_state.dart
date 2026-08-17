@@ -65,7 +65,7 @@ class DrawState {
         id: 'page_uterus',
         pageType: 'uterus',
         title: 'Матка',
-        backgroundPaths: const ['assets/schemes/uterus_sagittal.png'],
+        backgroundPaths: const ['assets/schemes/uterus.jpg'],
       ),
     ];
 

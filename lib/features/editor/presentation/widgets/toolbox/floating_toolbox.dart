@@ -1124,7 +1124,14 @@ class SettingsBubble extends StatelessWidget {
 
     final labelText = currentTool == ToolType.spray
         ? 'Конус: ${currentStrokeWidth.round()} px'
-        : '${currentStrokeWidth.round()} px';
+        : (currentTool == ToolType.iud ||
+                currentTool == ToolType.foci ||
+                currentTool == ToolType.follicle ||
+                currentTool == ToolType.polyp ||
+                currentTool == ToolType.gui ||
+                currentTool == ToolType.customStamp)
+            ? 'Размер: ${currentStrokeWidth.round()}'
+            : '${currentStrokeWidth.round()} px';
 
     final label = Text(
       labelText,

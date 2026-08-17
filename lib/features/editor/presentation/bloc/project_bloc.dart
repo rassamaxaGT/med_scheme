@@ -61,6 +61,8 @@ class LoadProjectEvent extends ProjectEvent {
   LoadProjectEvent(this.source);
 }
 
+class ResetProjectStateEvent extends ProjectEvent {}
+
 // --- States ---
 abstract class ProjectState {}
 
@@ -212,6 +214,15 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
         emit(ProjectLoaded(projectData, path));
       } catch (e) {
         emit(ProjectError('Ошибка загрузки проекта: $e'));
+      }
+    });
+
+    on<ResetProjectStateEvent>((event, emit) {
+      currentProjectFilePath = null;
+      if (_selectedDirectoryPath != null) {
+        emit(ProjectDirectorySelected(_selectedDirectoryPath!));
+      } else {
+        emit(ProjectInitial());
       }
     });
   }
