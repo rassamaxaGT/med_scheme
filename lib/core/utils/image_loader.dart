@@ -51,10 +51,17 @@ Future<ui.Image?> loadUiImage(String rawPath) async {
   return await native_loader.loadNativeFile(rawPath);
 }
 
-Future<ui.Image?> _decodeBytes(Uint8List bytes) {
-  final c = Completer<ui.Image>();
-  ui.decodeImageFromList(bytes, (img) => c.complete(img));
-  return c.future;
+Future<ui.Image?> _decodeBytes(Uint8List bytes) async {
+  try {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  } catch (e) {
+    debugPrint('[ImageLoader] instantiateImageCodec failed: $e');
+    final c = Completer<ui.Image?>();
+    ui.decodeImageFromList(bytes, (img) => c.complete(img));
+    return c.future;
+  }
 }
 
 Future<ui.Image?> _loadViaProvider(ImageProvider p) async {
