@@ -1309,7 +1309,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       );
 
-      if (!mounted) return;
+      if (!context.mounted || !mounted) return;
       if (choice == 'discard') {
         _performCreateNewProject(context);
       } else if (choice == 'save') {
@@ -1343,7 +1343,7 @@ class _EditorScreenState extends State<EditorScreen> {
             ],
           ),
         );
-        if (!mounted) return;
+        if (!context.mounted || !mounted) return;
         if (confirm != true) return;
       }
 
@@ -1353,7 +1353,7 @@ class _EditorScreenState extends State<EditorScreen> {
         withData: kIsWeb,
       );
 
-      if (!mounted) return;
+      if (!context.mounted || !mounted) return;
 
       if (result != null) {
         ProjectFileSource? source;
