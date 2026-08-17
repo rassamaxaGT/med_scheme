@@ -1,6 +1,5 @@
 import 'dart:ui' as ui;
-import 'image_loader_web.dart'
-    if (dart.library.io) 'image_loader_io.dart';
+import '_image_loader_impl.dart'
+    if (dart.library.html) '_image_loader_web_impl.dart';
 
-Future<ui.Image?> loadUiImage(String path) => loadUiImagePlatform(path);
-
+Future<ui.Image?> loadUiImage(String path) => loadUiImageImpl(path);
