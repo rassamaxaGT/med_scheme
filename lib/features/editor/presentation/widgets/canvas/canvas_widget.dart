@@ -240,8 +240,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
         // Автоматическая подгрузка изображений для фонов
         for (final path in state.backgroundPaths) {
-          if (!_bgImages.containsKey(path)) {
-            _bgImages[path] = null;
+          // Перезагружаем если: ключ отсутствует, или значение null (прошлая загрузка неудалась)
+          if (!_bgImages.containsKey(path) || _bgImages[path] == null) {
+            _bgImages[path] = null; // маркируем как «загружается»
             Future.microtask(() => _loadBgImage(path));
           }
         }
@@ -416,19 +417,27 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   // Загрузка любого фонового изображения (в т.ч. пользовательского)
   void _loadBgImage(String path) async {
     try {
+      debugPrint('[ImageLoader] Loading: $path');
       final image = await loadUiImage(path);
+      debugPrint('[ImageLoader] Result for $path: ${image != null ? "OK (${image.width}x${image.height})" : "NULL"}');
       if (mounted) {
         setState(() {
-          _bgImages[path] = image;
-          _rebuildNonNullBgImages(); // синхронизируем кэш non-null карты
-          if (_loadedBackgroundImage == null || path == _loadedBackgroundPath) {
-            _loadedBackgroundImage = image;
-            _loadedBackgroundPath = path;
+          if (image != null) {
+            _bgImages[path] = image;
+            _rebuildNonNullBgImages();
+            if (_loadedBackgroundImage == null || path == _loadedBackgroundPath) {
+              _loadedBackgroundImage = image;
+              _loadedBackgroundPath = path;
+            }
+          } else {
+            // Удаляем ключ чтобы следующий build повторил загрузку
+            _bgImages.remove(path);
+            _rebuildNonNullBgImages();
           }
         });
       }
     } catch (e) {
-      debugPrint('Ошибка загрузки фонового изображения $path: $e');
+      debugPrint('[ImageLoader] Error loading $path: $e');
       if (mounted) {
         setState(() {
           _bgImages.remove(path);
