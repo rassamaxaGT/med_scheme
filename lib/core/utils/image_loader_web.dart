@@ -1,20 +1,27 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'dart:async';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
 import 'web_helper.dart';
 
-Future<ui.Image?> loadUiImagePlatform(String path) async {
+Future<ui.Image?> loadUiImagePlatform(String rawPath) async {
   try {
+    String path = rawPath.replaceAll(r'\', '/');
+    if (path.startsWith('/')) {
+      path = path.substring(1);
+    }
+
     // 1. Стандартные и встроенные ассеты
     if (path.startsWith('assets/')) {
       try {
         final byteData = await rootBundle.load(path);
         final bytes = byteData.buffer.asUint8List();
-        final codec = await ui.instantiateImageCodec(bytes);
-        final frame = await codec.getNextFrame();
-        return frame.image;
+        final completer = Completer<ui.Image>();
+        ui.decodeImageFromList(bytes, (ui.Image img) {
+          completer.complete(img);
+        });
+        return await completer.future;
       } catch (e) {
         debugPrint('rootBundle.load failed for $path: $e. Trying AssetImage...');
         final provider = AssetImage(path);
@@ -40,9 +47,11 @@ Future<ui.Image?> loadUiImagePlatform(String path) async {
     if (path.startsWith('blob:')) {
       final cachedBytes = getBlobBytes(path);
       if (cachedBytes != null) {
-        final codec = await ui.instantiateImageCodec(cachedBytes);
-        final frame = await codec.getNextFrame();
-        return frame.image;
+        final completer = Completer<ui.Image>();
+        ui.decodeImageFromList(cachedBytes, (ui.Image img) {
+          completer.complete(img);
+        });
+        return await completer.future;
       }
     }
 
@@ -64,9 +73,10 @@ Future<ui.Image?> loadUiImagePlatform(String path) async {
     stream.addListener(listener);
     return await completer.future;
   } catch (e) {
-    debugPrint('Error loading web image ($path): $e');
+    debugPrint('Error loading web image ($rawPath): $e');
     return null;
   }
 }
+
 
 
