@@ -24,7 +24,6 @@ class CanvasPainter extends CustomPainter {
   stampImages; // кешированные пользовательские PNG штампы
   final String? selectedActionId;
   final String? patientId;
-  final ui.Image? staticImage;
 
   // ── Paint Object Pool ──────────────────────────────────────────────────────
   // Переиспользуемые экземпляры — создаются один раз, мутируются перед каждым
@@ -54,7 +53,6 @@ class CanvasPainter extends CustomPainter {
     this.stampImages = const {},
     this.selectedActionId,
     this.patientId,
-    this.staticImage,
   }) : _activeActionStatic = activeAction,
        // Когда передан notifier — painter слушает его и перерисовывается без setState
        super(repaint: activeActionNotifier);
@@ -292,47 +290,6 @@ class CanvasPainter extends CustomPainter {
     titlePainter.paint(canvas, textOffset);
   }
 
-  static ui.Image buildStaticImage({
-    required Size size,
-    required List<DrawAction> history,
-    required String? selectedActionId,
-    required List<String> backgroundPaths,
-    required String? backgroundPath,
-    required ui.Image? backgroundImage,
-    required Map<String, ui.Image> bgImages,
-    required Map<String, ui.Image> stampImages,
-    required String? patientId,
-    double pixelRatio = 1.0,
-  }) {
-    final int width = math.max(1, (size.width * pixelRatio).toInt());
-    final int height = math.max(1, (size.height * pixelRatio).toInt());
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    if (pixelRatio != 1.0) {
-      canvas.scale(pixelRatio, pixelRatio);
-    }
-
-    final painter = CanvasPainter(
-      history: history,
-      selectedActionId: selectedActionId,
-      backgroundPaths: backgroundPaths,
-      backgroundPath: backgroundPath,
-      backgroundImage: backgroundImage,
-      bgImages: bgImages,
-      stampImages: stampImages,
-      patientId: patientId,
-    );
-
-    painter._paintStaticContent(canvas, size);
-
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(width, height);
-    picture.dispose();
-    return image;
-  }
-
   @override
   bool shouldRepaint(covariant CanvasPainter oldDelegate) {
     return oldDelegate.history != history ||
@@ -344,30 +301,13 @@ class CanvasPainter extends CustomPainter {
         oldDelegate.backgroundPaths != backgroundPaths ||
         oldDelegate.bgImages != bgImages ||
         oldDelegate.stampImages != stampImages ||
-        oldDelegate.patientId != patientId ||
-        oldDelegate.staticImage != staticImage;
+        oldDelegate.patientId != patientId;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (staticImage != null) {
-      // 1. Моментальная отрисовка растровой GPU-текстуры (0.0001 ms!)
-      final srcRect = Rect.fromLTWH(
-        0,
-        0,
-        staticImage!.width.toDouble(),
-        staticImage!.height.toDouble(),
-      );
-      final dstRect = Rect.fromLTWH(0, 0, size.width, size.height);
-      canvas.drawImageRect(staticImage!, srcRect, dstRect, Paint());
-
-      // 2. Отрисовка динамических объектов (активный штрих / выделение)
-      _paintDynamicOverlays(canvas, size);
-    } else {
-      // Фоллбек полной отрисовки
-      _paintStaticContent(canvas, size);
-      _paintDynamicOverlays(canvas, size);
-    }
+    _paintStaticContent(canvas, size);
+    _paintDynamicOverlays(canvas, size);
   }
 
   void _paintStaticContent(Canvas canvas, Size size) {

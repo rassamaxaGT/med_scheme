@@ -112,16 +112,6 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   String _generateId() =>
       '${DateTime.now().millisecondsSinceEpoch}_${_idCounter++}';
 
-  // ── Кэширование статичного растрового слоя (Hardware GPU Bitmap Cache) ──
-  ui.Image? _staticImageCache;
-  List<DrawAction>? _cachedHistoryRef;
-  String? _cachedSelectedActionId;
-  List<String>? _cachedBackgroundPaths;
-  ui.Image? _cachedBgImage;
-  int _cachedBgImagesCount = 0;
-  int _cachedStampImagesCount = 0;
-  Size? _cachedLayoutSize;
-
   @override
   void initState() {
     super.initState();
@@ -131,58 +121,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   @override
   void dispose() {
     widget.resetZoomNotifier?.removeListener(_onResetZoom);
-    _staticImageCache?.dispose();
-    _staticImageCache = null;
     _activeStrokeNotifier.dispose();
     _hoverCursorNotifier.dispose();
     super.dispose();
-  }
-
-  ui.Image? _getOrUpdateStaticImage(DrawState state, Size containerSize) {
-    if (containerSize.width <= 0 || containerSize.height <= 0) {
-      return _staticImageCache;
-    }
-
-    final bgImg = widget.backgroundImage ?? _loadedBackgroundImage;
-    final validBgImagesCount = _bgImagesNonNull.length;
-    final validStampImagesCount = _stampImagesNonNull.length;
-
-    final bool needsRebuild = _staticImageCache == null ||
-        _cachedHistoryRef != state.history ||
-        _cachedSelectedActionId != _selectedActionId ||
-        _cachedBackgroundPaths != state.backgroundPaths ||
-        _cachedBgImage != bgImg ||
-        _cachedBgImagesCount != validBgImagesCount ||
-        _cachedStampImagesCount != validStampImagesCount ||
-        _cachedLayoutSize != containerSize;
-
-    if (needsRebuild) {
-      _staticImageCache?.dispose();
-      final double pixelRatio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
-
-      _staticImageCache = CanvasPainter.buildStaticImage(
-        size: containerSize,
-        history: state.history,
-        selectedActionId: _selectedActionId,
-        backgroundPaths: state.backgroundPaths,
-        backgroundPath: state.backgroundPath,
-        backgroundImage: bgImg,
-        bgImages: _bgImagesNonNull,
-        stampImages: _stampImagesNonNull,
-        patientId: state.patientId,
-        pixelRatio: pixelRatio,
-      );
-
-      _cachedHistoryRef = state.history;
-      _cachedSelectedActionId = _selectedActionId;
-      _cachedBackgroundPaths = List<String>.from(state.backgroundPaths);
-      _cachedBgImage = bgImg;
-      _cachedBgImagesCount = validBgImagesCount;
-      _cachedStampImagesCount = validStampImagesCount;
-      _cachedLayoutSize = containerSize;
-    }
-
-    return _staticImageCache;
   }
 
   void _onResetZoom() {
@@ -330,30 +271,22 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                       transform: Matrix4.translationValues(_offset.dx, _offset.dy, 0.0)
                         * Matrix4.diagonal3Values(_scale, _scale, 1.0),
                       child: RepaintBoundary(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
-                            final staticImage = _getOrUpdateStaticImage(state, containerSize);
-
-                            return CustomPaint(
-                              size: Size.infinite,
-                              painter: CanvasPainter(
-                                history: state.history,
-                                // Используем notifier — painter сам перерисовывается без setState
-                                activeActionNotifier: state.currentTool != ToolType.eraser
-                                    ? _activeStrokeNotifier
-                                    : null,
-                                backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
-                                backgroundPaths: state.backgroundPaths,
-                                backgroundPath: state.backgroundPath,
-                                bgImages: _bgImagesNonNull,
-                                stampImages: _stampImagesNonNull,
-                                selectedActionId: _selectedActionId,
-                                patientId: state.patientId,
-                                staticImage: staticImage,
-                              ),
-                            );
-                          },
+                        child: CustomPaint(
+                          size: Size.infinite,
+                          painter: CanvasPainter(
+                            history: state.history,
+                            // Используем notifier — painter сам перерисовывается без setState
+                            activeActionNotifier: state.currentTool != ToolType.eraser
+                                ? _activeStrokeNotifier
+                                : null,
+                            backgroundImage: widget.backgroundImage ?? _loadedBackgroundImage,
+                            backgroundPaths: state.backgroundPaths,
+                            backgroundPath: state.backgroundPath,
+                            bgImages: _bgImagesNonNull,
+                            stampImages: _stampImagesNonNull,
+                            selectedActionId: _selectedActionId,
+                            patientId: state.patientId,
+                          ),
                         ),
                       ),
                     ),
