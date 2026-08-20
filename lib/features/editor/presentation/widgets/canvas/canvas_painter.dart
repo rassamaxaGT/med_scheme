@@ -156,16 +156,21 @@ class CanvasPainter extends CustomPainter {
     final count = activePaths.length;
     final int cols = count <= 1 ? 1 : 2;
 
-    final double col0W = 600.0 * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0], bgImages?[activePaths[0]]);
+    double cellH = 1280.0;
+    for (final p in activePaths) {
+      final s = getOriginalSchemeSize(p, bgImages?[p]);
+      if (s.height > cellH) cellH = s.height;
+    }
+
+    final double col0W = cellH * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0], bgImages?[activePaths[0]]);
     final double col1W = (activePaths.length > 1)
-        ? 600.0 * getSchemeAspectRatio(activePaths[1], bgImages?[activePaths[1]])
+        ? cellH * getSchemeAspectRatio(activePaths[1], bgImages?[activePaths[1]])
         : 0.0;
 
     final int col = idx % cols;
     final int row = idx ~/ cols;
 
     final double cellW = col == 0 ? col0W : col1W;
-    const double cellH = 600.0;
     final double cellLeft = col == 0 ? 0.0 : col0W;
     final double cellTop = row * cellH;
 
@@ -490,6 +495,10 @@ class CanvasPainter extends CustomPainter {
 
     for (final rawAction in history) {
       if (rawAction.id == selectedActionId) continue;
+      if (rawAction.targetSchemePath != null &&
+          !activePaths.contains(rawAction.targetSchemePath)) {
+        continue;
+      }
       final canvasAction = toCanvasAction(rawAction, activePaths, bgImages);
       _drawAction(canvas, canvasAction);
     }
@@ -538,8 +547,11 @@ class CanvasPainter extends CustomPainter {
 
     // 1. Отрисовка активного штриха (тот, что сейчас наносится пальцем/стилусом)
     if (activeAction != null && activeAction!.id != selectedActionId) {
-      final canvasAction = toCanvasAction(activeAction!, activePaths, bgImages);
-      _drawAction(canvas, canvasAction);
+      if (activeAction!.targetSchemePath == null ||
+          activePaths.contains(activeAction!.targetSchemePath)) {
+        final canvasAction = toCanvasAction(activeAction!, activePaths, bgImages);
+        _drawAction(canvas, canvasAction);
+      }
     }
 
     // 2. Отрисовка выделенного объекта в его актуальном трансформированном состоянии + рамка выделения
@@ -551,9 +563,12 @@ class CanvasPainter extends CustomPainter {
         } catch (_) {}
       }
       if (selectedAction != null) {
-        final canvasAction = toCanvasAction(selectedAction, activePaths, bgImages);
-        _drawAction(canvas, canvasAction);
-        _drawSelectionBorder(canvas, canvasAction);
+        if (selectedAction.targetSchemePath == null ||
+            activePaths.contains(selectedAction.targetSchemePath)) {
+          final canvasAction = toCanvasAction(selectedAction, activePaths, bgImages);
+          _drawAction(canvas, canvasAction);
+          _drawSelectionBorder(canvas, canvasAction);
+        }
       }
     }
 

@@ -576,6 +576,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     }
 
     if (selected == null) return const SizedBox.shrink();
+    if (selected.targetSchemePath != null && !state.backgroundPaths.contains(selected.targetSchemePath)) {
+      return const SizedBox.shrink();
+    }
 
     final originalBounds = CanvasPainter.getOriginalActionBounds(selected);
     if (originalBounds == Rect.zero) return const SizedBox.shrink();
