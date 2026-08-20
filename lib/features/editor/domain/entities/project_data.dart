@@ -13,6 +13,18 @@ class ProjectData {
     this.customSchemes = const [],
   });
 
+  ProjectData copyWith({
+    List<PageData>? pages,
+    String? patientId,
+    List<CustomSchemeItem>? customSchemes,
+  }) {
+    return ProjectData(
+      pages: pages ?? this.pages,
+      patientId: patientId ?? this.patientId,
+      customSchemes: customSchemes ?? this.customSchemes,
+    );
+  }
+
   /// Устаревший геттер истории первой страницы для обратной совместимости
   List<DrawAction> get actions => pages.isNotEmpty ? pages.first.history : const [];
 

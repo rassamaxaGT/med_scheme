@@ -6,14 +6,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
+import '../../domain/entities/report_config.dart';
 import '../../domain/repositories/project_repository.dart';
 import '../models/draw_action_model.dart';
 import '../models/page_data_model.dart';
+import '../services/offscreen_canvas_renderer.dart';
+import '../services/pdf_report_generator_impl.dart';
 import '../../presentation/bloc/draw_state.dart';
 import '../../presentation/widgets/canvas/canvas_painter.dart';
 import '../../../../core/utils/web_helper.dart';
@@ -381,6 +385,71 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     final pdfBytes = await pdf.save();
     triggerDownload(pdfBytes, '$filename.pdf');
 
+    return 'загрузки браузера';
+  }
+
+  final OffscreenCanvasRenderer _renderer = OffscreenCanvasRenderer();
+  late final PdfReportGeneratorImpl _pdfGenerator = PdfReportGeneratorImpl(renderer: _renderer);
+
+  @override
+  Future<Uint8List> generateReportPdf({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    return _pdfGenerator.generatePdf(project: project, config: config);
+  }
+
+  @override
+  Future<void> printReport({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    final pdfBytes = await generateReportPdf(project: project, config: config);
+    final patient = config.patientId.isNotEmpty ? config.patientId : (project.patientId ?? 'report');
+    final docName = 'УЗИ_${patient}_${DateTime.now().millisecondsSinceEpoch}';
+
+    await Printing.layoutPdf(
+      name: docName,
+      onLayout: (PdfPageFormat format) async => pdfBytes,
+    );
+  }
+
+  @override
+  Future<String> exportReportPdf({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    final pdfBytes = await generateReportPdf(project: project, config: config);
+    final displayName = filename.endsWith('.pdf') ? filename : '$filename.pdf';
+    triggerDownload(pdfBytes, displayName);
+    return 'загрузки браузера';
+  }
+
+  @override
+  Future<String> exportReportPng({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+    PageData? singlePage,
+  }) async {
+    final targetPage = singlePage ?? (project.pages.isNotEmpty ? project.pages.first : PageData(id: 'page_1', pageType: 'custom', title: 'Схема'));
+    Uint8List pngBytes;
+
+    if (config.pngExportType == PngExportType.fullMedicalCard) {
+      pngBytes = await _renderer.renderBrandedMedicalCardPng(page: targetPage, config: config);
+    } else {
+      pngBytes = await _renderer.renderPageToPng(
+        page: targetPage,
+        dpiScale: config.dpiScale,
+        patientId: config.patientId.isNotEmpty ? config.patientId : project.patientId,
+      );
+    }
+
+    final displayName = filename.endsWith('.png') ? filename : '$filename.png';
+    triggerDownload(pngBytes, displayName);
     return 'загрузки браузера';
   }
 

@@ -31,9 +31,10 @@ class MyApp extends StatelessWidget {
         providers: [
           BlocProvider<DrawBloc>(create: (context) => DrawBloc()),
           BlocProvider<ProjectBloc>(
-            create: (context) => ProjectBloc(
-              projectRepository: getIt<ProjectRepository>(),
-            )..add(InitializeProjectEvent()), // Инициализируем из сохраненного пути
+            create: (context) =>
+                ProjectBloc(projectRepository: getIt<ProjectRepository>())..add(
+                  InitializeProjectEvent(),
+                ), // Инициализируем из сохраненного пути
           ),
         ],
         child: const EditorScreen(),

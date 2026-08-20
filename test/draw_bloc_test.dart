@@ -58,6 +58,18 @@ void main() {
       expect(drawBloc.state.currentTool, ToolType.cyst);
       expect(drawBloc.state.currentColor, const Color(0xFF03A9F4));
 
+      // BowelInfiltrate -> Brown
+      drawBloc.add(SelectToolEvent(ToolType.bowelInfiltrate));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.bowelInfiltrate);
+      expect(drawBloc.state.currentColor, const Color(0xFF5C4033));
+
+      // BowelInfiltrate2 -> Brown
+      drawBloc.add(SelectToolEvent(ToolType.bowelInfiltrate2));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.bowelInfiltrate2);
+      expect(drawBloc.state.currentColor, const Color(0xFF5C4033));
+
       // Spray -> strokeWidth = 16.0
       drawBloc.add(SelectToolEvent(ToolType.spray));
       await drawBloc.stream.first;

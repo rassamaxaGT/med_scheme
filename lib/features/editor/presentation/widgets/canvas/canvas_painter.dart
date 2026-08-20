@@ -69,8 +69,11 @@ class CanvasPainter extends CustomPainter {
     if (path == 'assets/schemes/sagittally.jpg') {
       return const Size(800.0, 566.0);
     }
-    if (path == 'assets/schemes/uterus.jpg') {
+    if (path == 'assets/schemes/uretus.png' || path == 'assets/schemes/uterus.jpg') {
       return const Size(1280.0, 905.0);
+    }
+    if (path == 'assets/schemes/abdominal_wall_cross_section.png') {
+      return const Size(1280.0, 720.0);
     }
     return const Size(800.0, 600.0);
   }
@@ -80,20 +83,44 @@ class CanvasPainter extends CustomPainter {
     return size.width / size.height;
   }
 
+  static double getSchemeScaleFactor(
+    String? targetSchemePath,
+    List<String> activePaths, [
+    Map<String, ui.Image>? bgImages,
+  ]) {
+    if (targetSchemePath == null) return 1.0;
+    final imgRect = getSchemeImageRect(
+      path: targetSchemePath,
+      activePaths: activePaths,
+      bgImages: bgImages,
+    );
+    if (imgRect == Rect.zero) return 1.0;
+    final origSize = getOriginalSchemeSize(targetSchemePath, bgImages?[targetSchemePath]);
+    final double s = imgRect.width / origSize.width;
+    return s > 0 ? (1.0 / s) : 1.0;
+  }
+
   static Size getCanvasBaseSize(List<String> paths, [Map<String, ui.Image>? bgImages]) {
-    if (paths.isEmpty) return const Size(800.0, 600.0);
+    if (paths.isEmpty) return const Size(1280.0, 960.0);
     final count = paths.length;
 
-    final double col0W = 600.0 * getSchemeAspectRatio(paths[0], bgImages?[paths[0]]);
+    // Используем максимальное нативное разрешение фонов без искусственного сжатия
+    double cellH = 1280.0;
+    for (final p in paths) {
+      final s = getOriginalSchemeSize(p, bgImages?[p]);
+      if (s.height > cellH) cellH = s.height;
+    }
+
+    final double col0W = cellH * getSchemeAspectRatio(paths[0], bgImages?[paths[0]]);
     final double col1W = (paths.length > 1)
-        ? 600.0 * getSchemeAspectRatio(paths[1], bgImages?[paths[1]])
+        ? cellH * getSchemeAspectRatio(paths[1], bgImages?[paths[1]])
         : 0.0;
 
     final int cols = count <= 1 ? 1 : 2;
     final int rows = count <= 2 ? 1 : (count / 2).ceil();
 
     final double totalW = cols == 1 ? col0W : (col0W + col1W);
-    final double totalH = rows * 600.0;
+    final double totalH = rows * cellH;
     return Size(totalW, totalH);
   }
 
@@ -157,7 +184,8 @@ class CanvasPainter extends CustomPainter {
   static String getSchemeTitle(String path) {
     if (path.contains('standart_endo')) return 'Эндометриоз — Исходник';
     if (path.contains('sagittally')) return 'Сагиттально';
-    if (path.contains('uterus')) return 'Матка';
+    if (path.contains('uterus') || path.contains('uretus')) return 'Матка';
+    if (path.contains('abdominal_wall')) return 'Брюшная стенка';
     if (path.contains('pelvis_ls')) return 'Таз — LS view';
     if (path.contains('pelvis_sagittal')) return 'Таз — Сагиттальный срез';
     if (path.contains('pelvis_anterior')) return 'Таз — Передняя стенка';
@@ -395,6 +423,7 @@ class CanvasPainter extends CustomPainter {
             image: bgImg,
             fit: BoxFit.contain,
             alignment: Alignment.center,
+            filterQuality: FilterQuality.high,
           );
         } else {
           _drawSchemePlaceholderBadge(canvas, cellRect, path);
@@ -459,63 +488,32 @@ class CanvasPainter extends CustomPainter {
       drawRect.height / bgSize.height,
     );
 
-    canvas.saveLayer(Rect.fromLTWH(0, 0, bgSize.width, bgSize.height), Paint());
-
-    for (int i = 0; i < activePaths.length; i++) {
-      final path = activePaths[i];
-      final imgRect = getSchemeImageRect(
-        path: path,
-        activePaths: activePaths,
-        bgImages: bgImages,
-      );
-      if (imgRect == Rect.zero) continue;
-
-      final origSize = getOriginalSchemeSize(path, bgImages[path]);
-      final double s = imgRect.width / origSize.width;
-
-      canvas.save();
-      canvas.translate(imgRect.left, imgRect.top);
-      canvas.scale(s, s);
-
-      for (final action in history) {
-        if (action.targetSchemePath == path) {
-          // Выделенный объект исключается из статичного кэша и рисуется во всплывающем динамическом слое
-          if (action.id == selectedActionId) {
-            continue;
-          }
-          _drawAction(canvas, action);
-        }
-      }
-
-      canvas.restore();
+    for (final rawAction in history) {
+      if (rawAction.id == selectedActionId) continue;
+      final canvasAction = toCanvasAction(rawAction, activePaths, bgImages);
+      _drawAction(canvas, canvasAction);
     }
 
-    for (final action in history) {
-      if (action.targetSchemePath == null) {
-        if (action.id == selectedActionId) {
-          continue;
-        }
-        _drawAction(canvas, action);
-      }
-    }
-
-    canvas.restore(); // for saveLayer
     canvas.restore(); // for clipping and translating
 
     if (patientId != null && patientId!.isNotEmpty) {
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: 'Пациент: $patientId',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 16.0,
-            fontWeight: FontWeight.bold,
-            backgroundColor: Colors.white.withAlpha(178),
+      final cacheKey = 'patientId_$patientId';
+      TextPainter? textPainter = _textPainterCache[cacheKey];
+      if (textPainter == null) {
+        textPainter = TextPainter(
+          text: TextSpan(
+            text: 'Пациент: $patientId',
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 15.0,
+              fontWeight: FontWeight.bold,
+              backgroundColor: Color(0xB2FFFFFF),
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
+          textDirection: TextDirection.ltr,
+        )..layout();
+        _textPainterCache[cacheKey] = textPainter;
+      }
       textPainter.paint(canvas, const Offset(16.0, 16.0));
     }
   }
@@ -540,26 +538,8 @@ class CanvasPainter extends CustomPainter {
 
     // 1. Отрисовка активного штриха (тот, что сейчас наносится пальцем/стилусом)
     if (activeAction != null && activeAction!.id != selectedActionId) {
-      final path = activeAction!.targetSchemePath;
-      if (path != null) {
-        final imgRect = getSchemeImageRect(
-          path: path,
-          activePaths: activePaths,
-          bgImages: bgImages,
-        );
-        if (imgRect != Rect.zero) {
-          final origSize = getOriginalSchemeSize(path, bgImages[path]);
-          final double s = imgRect.width / origSize.width;
-
-          canvas.save();
-          canvas.translate(imgRect.left, imgRect.top);
-          canvas.scale(s, s);
-          _drawAction(canvas, activeAction!);
-          canvas.restore();
-        }
-      } else {
-        _drawAction(canvas, activeAction!);
-      }
+      final canvasAction = toCanvasAction(activeAction!, activePaths, bgImages);
+      _drawAction(canvas, canvasAction);
     }
 
     // 2. Отрисовка выделенного объекта в его актуальном трансформированном состоянии + рамка выделения
@@ -571,32 +551,122 @@ class CanvasPainter extends CustomPainter {
         } catch (_) {}
       }
       if (selectedAction != null) {
-        final path = selectedAction.targetSchemePath;
-        if (path != null) {
-          final imgRect = getSchemeImageRect(
-            path: path,
-            activePaths: activePaths,
-            bgImages: bgImages,
-          );
-          if (imgRect != Rect.zero) {
-            final origSize = getOriginalSchemeSize(path, bgImages[path]);
-            final double s = imgRect.width / origSize.width;
-
-            canvas.save();
-            canvas.translate(imgRect.left, imgRect.top);
-            canvas.scale(s, s);
-            _drawAction(canvas, selectedAction);
-            _drawSelectionBorder(canvas, selectedAction);
-            canvas.restore();
-          }
-        } else {
-          _drawAction(canvas, selectedAction);
-          _drawSelectionBorder(canvas, selectedAction);
-        }
+        final canvasAction = toCanvasAction(selectedAction, activePaths, bgImages);
+        _drawAction(canvas, canvasAction);
+        _drawSelectionBorder(canvas, canvasAction);
       }
     }
 
     canvas.restore(); // for clipping and translating
+  }
+
+  static DrawAction toCanvasAction(
+    DrawAction action,
+    List<String> activePaths, [
+    Map<String, ui.Image>? bgImages,
+  ]) {
+    final path = action.targetSchemePath;
+    if (path == null) return action;
+
+    final imgRect = getSchemeImageRect(
+      path: path,
+      activePaths: activePaths,
+      bgImages: bgImages,
+    );
+    if (imgRect == Rect.zero) return action;
+
+    final origSize = getOriginalSchemeSize(path, bgImages?[path]);
+    final double s = origSize.width > 0 ? (imgRect.width / origSize.width) : 1.0;
+    if (s <= 0) return action;
+
+    Offset mapPoint(Offset p) => imgRect.topLeft + p * s;
+
+    if (action is StrokeAction) {
+      return StrokeAction(
+        id: action.id,
+        color: action.color,
+        strokeWidth: action.strokeWidth * s,
+        points: action.points.map(mapPoint).toList(),
+        isEraser: action.isEraser,
+        brushType: action.brushType,
+        isDashed: action.isDashed,
+        targetSchemePath: action.targetSchemePath,
+        eraserMasks: action.eraserMasks?.map((m) => EraserMaskData(
+          localPoints: m.localPoints.map((p) => p * s).toList(),
+          strokeWidth: m.strokeWidth * s,
+          target: m.target,
+        )).toList(),
+        offsetX: action.offsetX * s,
+        offsetY: action.offsetY * s,
+        scaleX: action.scaleX,
+        scaleY: action.scaleY,
+      );
+    } else if (action is ShapeAction) {
+      return ShapeAction(
+        id: action.id,
+        color: action.color,
+        strokeWidth: action.strokeWidth * s,
+        startPoint: mapPoint(action.startPoint),
+        endPoint: mapPoint(action.endPoint),
+        shapeType: action.shapeType,
+        figoType: action.figoType,
+        rotation: action.rotation,
+        targetSchemePath: action.targetSchemePath,
+        eraserMasks: action.eraserMasks?.map((m) => EraserMaskData(
+          localPoints: m.localPoints.map((p) => p * s).toList(),
+          strokeWidth: m.strokeWidth * s,
+          target: m.target,
+        )).toList(),
+        offsetX: action.offsetX * s,
+        offsetY: action.offsetY * s,
+        scaleX: action.scaleX,
+        scaleY: action.scaleY,
+      );
+    } else if (action is StampAction) {
+      return StampAction(
+        id: action.id,
+        color: action.color,
+        strokeWidth: action.strokeWidth * s,
+        position: mapPoint(action.position),
+        stampType: action.stampType,
+        customStampPath: action.customStampPath,
+        rotation: action.rotation,
+        targetSchemePath: action.targetSchemePath,
+        eraserMasks: action.eraserMasks?.map((m) => EraserMaskData(
+          localPoints: m.localPoints.map((p) => p * s).toList(),
+          strokeWidth: m.strokeWidth * s,
+          target: m.target,
+        )).toList(),
+        offsetX: action.offsetX * s,
+        offsetY: action.offsetY * s,
+        scaleX: action.scaleX,
+        scaleY: action.scaleY,
+      );
+    } else if (action is EraserStrokeAction) {
+      return EraserStrokeAction(
+        id: action.id,
+        strokeWidth: action.strokeWidth * s,
+        points: action.points.map(mapPoint).toList(),
+        target: action.target,
+        targetSchemePath: action.targetSchemePath,
+      );
+    } else if (action is TextAction) {
+      return TextAction(
+        id: action.id,
+        color: action.color,
+        strokeWidth: action.strokeWidth * s,
+        startPoint: mapPoint(action.startPoint),
+        endPoint: mapPoint(action.endPoint),
+        text: action.text,
+        isDashed: action.isDashed,
+        targetSchemePath: action.targetSchemePath,
+        offsetX: action.offsetX * s,
+        offsetY: action.offsetY * s,
+        scaleX: action.scaleX,
+        scaleY: action.scaleY,
+      );
+    }
+    return action;
   }
 
   static Rect getOriginalActionBounds(DrawAction action) {
@@ -644,6 +714,16 @@ class CanvasPainter extends CustomPainter {
         final size = action.strokeWidth * 2.0;
         w = size * 1.2;
         h = size * 1.8;
+      } else if (action.stampType == 'bowelInfiltrate' || action.customStampPath == 'assets/images/infiltrat.png') {
+        final double scale = action.strokeWidth / 5.0;
+        final double height = 90.0 * scale;
+        final double width = height * 2.0;
+        w = width;
+        h = height;
+      } else if (action.stampType == 'custom') {
+        final double scale = action.strokeWidth / 5.0;
+        w = 50.0 * scale;
+        h = 50.0 * scale;
       }
       return Rect.fromCenter(
         center: action.position,
@@ -970,13 +1050,13 @@ class CanvasPainter extends CustomPainter {
     canvas.restore(); // Сливаем общие трансформации
   }
 
-  void _drawEraserStroke(Canvas canvas, EraserStrokeAction eraser) {
+  void _drawEraserStroke(Canvas canvas, EraserStrokeAction eraser, [double schemeScaleFactor = 1.0]) {
     if (eraser.points.isEmpty) return;
 
     final paint = Paint()
       ..color = const Color(0x00000000)
       ..blendMode = BlendMode.clear
-      ..strokeWidth = eraser.strokeWidth
+      ..strokeWidth = eraser.strokeWidth * schemeScaleFactor
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -1081,12 +1161,12 @@ class CanvasPainter extends CustomPainter {
     }
   }
 
-  void _drawStroke(Canvas canvas, StrokeAction stroke) {
+  void _drawStroke(Canvas canvas, StrokeAction stroke, [double schemeScaleFactor = 1.0]) {
     if (stroke.points.length < 2) return;
 
     final paint = Paint()
       ..color = stroke.isEraser ? Colors.transparent : stroke.color
-      ..strokeWidth = stroke.strokeWidth
+      ..strokeWidth = stroke.strokeWidth * schemeScaleFactor
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -1344,10 +1424,10 @@ class CanvasPainter extends CustomPainter {
     }
   }
 
-  void _drawShape(Canvas canvas, ShapeAction shape) {
+  void _drawShape(Canvas canvas, ShapeAction shape, [double schemeScaleFactor = 1.0]) {
     final paint = Paint()
       ..color = shape.color
-      ..strokeWidth = shape.strokeWidth
+      ..strokeWidth = (shape.strokeWidth > 0 ? shape.strokeWidth : 2.0) * schemeScaleFactor
       ..style = PaintingStyle.stroke;
 
     final rect = Rect.fromPoints(shape.startPoint, shape.endPoint);
@@ -1462,8 +1542,8 @@ class CanvasPainter extends CustomPainter {
         ..strokeWidth = 2.0
         ..style = PaintingStyle.stroke;
       canvas.drawPath(scallopedPath, borderPaint);
-    } else if (shape.shapeType == 'bowelInfiltrate') {
-      // Инфильтрат кишки: нижняя половина эллипса с коричневой заливкой и фестончатым контуром
+    } else if (shape.shapeType == 'bowelInfiltrate' || shape.shapeType == 'bowelInfiltrate2') {
+      // Инфильтрат 2 (прежний инфильтрат кишки): нижняя половина эллипса с коричневой заливкой и фестончатым контуром
       final segmentPath = Path();
       segmentPath.addArc(rect, 0.0, math.pi);
       segmentPath.close();
@@ -1706,16 +1786,16 @@ class CanvasPainter extends CustomPainter {
     canvas.drawPath(path, strokePaint);
   }
 
-  void _drawStamp(Canvas canvas, StampAction stamp) {
+  void _drawStamp(Canvas canvas, StampAction stamp, [double schemeScaleFactor = 1.0]) {
     if (stamp.stampType == 'iud') {
       // Рисуем ВМС с масштабированием
-      final double scale = stamp.strokeWidth / 8.0;
+      final double scale = (stamp.strokeWidth / 8.0) * schemeScaleFactor;
       final double width = 29.0 * scale;
       final double height = 36.0 * scale;
 
       final paint = Paint()
         ..color = stamp.color
-        ..strokeWidth = (3.0 * scale).clamp(1.5, 6.0)
+        ..strokeWidth = (3.0 * scale).clamp(1.5 * schemeScaleFactor, 6.0 * schemeScaleFactor)
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
 
@@ -1734,7 +1814,7 @@ class CanvasPainter extends CustomPainter {
         ..style = PaintingStyle.fill;
 
       final center = stamp.position;
-      final double rOuter = stamp.strokeWidth * 2;
+      final double rOuter = stamp.strokeWidth * 2 * schemeScaleFactor;
       final double rInner = rOuter / 2;
 
       final path = Path();
@@ -1754,15 +1834,15 @@ class CanvasPainter extends CustomPainter {
     } else if (stamp.stampType == 'follicle') {
       final paint = Paint()
         ..color = const Color(0xFF03A9F4)
-        ..strokeWidth = 2.0
+        ..strokeWidth = 2.0 * schemeScaleFactor
         ..style = PaintingStyle.stroke;
 
       final center = stamp.position;
-      final double radius = stamp.strokeWidth * 1.5;
+      final double radius = stamp.strokeWidth * 1.5 * schemeScaleFactor;
       canvas.drawCircle(center, radius, paint);
     } else if (stamp.stampType == 'gui') {
       final center = stamp.position;
-      final double size = stamp.strokeWidth * 2.5;
+      final double size = stamp.strokeWidth * 2.5 * schemeScaleFactor;
       final rect = Rect.fromCenter(
         center: center,
         width: size * 2.2,
@@ -1771,7 +1851,7 @@ class CanvasPainter extends CustomPainter {
 
       final strokePaint = Paint()
         ..color = Colors.black
-        ..strokeWidth = 1.2
+        ..strokeWidth = 1.2 * schemeScaleFactor
         ..style = PaintingStyle.stroke
         ..strokeJoin = StrokeJoin.round
         ..strokeCap = StrokeCap.round;
@@ -1784,12 +1864,12 @@ class CanvasPainter extends CustomPainter {
     } else if (stamp.stampType == 'polyp') {
       // Полип эндометрия (округлая капля на ножке со штриховкой, масштабируемый)
       final center = stamp.position;
-      final double size = stamp.strokeWidth * 2.0;
+      final double size = stamp.strokeWidth * 2.0 * schemeScaleFactor;
 
       final paint = Paint()
         ..color =
             const Color(0xFFFF7043) // Peach
-        ..strokeWidth = 2.0
+        ..strokeWidth = 2.0 * schemeScaleFactor
         ..style = PaintingStyle.stroke;
 
       final fillPaint = Paint()
@@ -1829,11 +1909,29 @@ class CanvasPainter extends CustomPainter {
         Offset(center.dx + size * 0.4, headCenterY - size * 0.3),
         hatchPaint,
       );
+    } else if (stamp.stampType == 'bowelInfiltrate' || stamp.customStampPath == 'assets/images/infiltrat.png') {
+      final image = stampImages[stamp.customStampPath ?? 'assets/images/infiltrat.png'] ?? stampImages['assets/images/infiltrat.png'];
+      if (image != null) {
+        final double scale = (stamp.strokeWidth / 5.0) * schemeScaleFactor;
+        final double height = 90.0 * scale;
+        final double width = height * (image.width / image.height);
+        final rect = Rect.fromCenter(
+          center: stamp.position,
+          width: width,
+          height: height,
+        );
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+          rect,
+          Paint(),
+        );
+      }
     } else if (stamp.stampType == 'custom' && stamp.customStampPath != null) {
       // Рисуем пользовательский PNG штамп
       final image = stampImages[stamp.customStampPath];
       if (image != null) {
-        final double size = 40.0;
+        final double size = 40.0 * schemeScaleFactor;
         final rect = Rect.fromCenter(
           center: stamp.position,
           width: size,

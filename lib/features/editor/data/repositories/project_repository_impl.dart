@@ -7,11 +7,15 @@ import 'package:shared_storage/shared_storage.dart' as saf;
 import 'package:archive/archive_io.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
+import '../../domain/entities/report_config.dart';
 import '../../domain/repositories/project_repository.dart';
+import '../services/offscreen_canvas_renderer.dart';
+import '../services/pdf_report_generator_impl.dart';
 
 import '../models/draw_action_model.dart';
 import '../models/page_data_model.dart';
@@ -536,6 +540,99 @@ class ProjectRepositoryImpl implements ProjectRepository {
       outputPath = '$directoryPath/$displayName';
       final file = File(outputPath);
       file.writeAsBytesSync(pdfBytes);
+      return outputPath;
+    }
+  }
+
+  final OffscreenCanvasRenderer _renderer = OffscreenCanvasRenderer();
+  late final PdfReportGeneratorImpl _pdfGenerator = PdfReportGeneratorImpl(renderer: _renderer);
+
+  @override
+  Future<Uint8List> generateReportPdf({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    return _pdfGenerator.generatePdf(project: project, config: config);
+  }
+
+  @override
+  Future<void> printReport({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    final pdfBytes = await generateReportPdf(project: project, config: config);
+    final patient = config.patientId.isNotEmpty ? config.patientId : (project.patientId ?? 'report');
+    final docName = 'УЗИ_${patient}_${DateTime.now().millisecondsSinceEpoch}';
+
+    await Printing.layoutPdf(
+      name: docName,
+      onLayout: (PdfPageFormat format) async => pdfBytes,
+    );
+  }
+
+  @override
+  Future<String> exportReportPdf({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {
+    final pdfBytes = await generateReportPdf(project: project, config: config);
+    final displayName = filename.endsWith('.pdf') ? filename : '$filename.pdf';
+
+    if (Platform.isAndroid && directoryPath.startsWith('content://')) {
+      final docUri = Uri.parse(directoryPath);
+      await saf.createFile(
+        docUri,
+        mimeType: 'application/pdf',
+        displayName: displayName,
+        bytes: pdfBytes,
+      );
+      return 'рабочую папку';
+    } else {
+      final outputPath = '$directoryPath/$displayName';
+      final file = File(outputPath);
+      file.writeAsBytesSync(pdfBytes);
+      return outputPath;
+    }
+  }
+
+  @override
+  Future<String> exportReportPng({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+    PageData? singlePage,
+  }) async {
+    final targetPage = singlePage ?? (project.pages.isNotEmpty ? project.pages.first : PageData(id: 'page_1', pageType: 'custom', title: 'Схема'));
+    Uint8List pngBytes;
+
+    if (config.pngExportType == PngExportType.fullMedicalCard) {
+      pngBytes = await _renderer.renderBrandedMedicalCardPng(page: targetPage, config: config);
+    } else {
+      pngBytes = await _renderer.renderPageToPng(
+        page: targetPage,
+        dpiScale: config.dpiScale,
+        patientId: config.patientId.isNotEmpty ? config.patientId : project.patientId,
+      );
+    }
+
+    final displayName = filename.endsWith('.png') ? filename : '$filename.png';
+
+    if (Platform.isAndroid && directoryPath.startsWith('content://')) {
+      final docUri = Uri.parse(directoryPath);
+      await saf.createFile(
+        docUri,
+        mimeType: 'image/png',
+        displayName: displayName,
+        bytes: pngBytes,
+      );
+      return 'рабочую папку';
+    } else {
+      final outputPath = '$directoryPath/$displayName';
+      final file = File(outputPath);
+      file.writeAsBytesSync(pngBytes);
       return outputPath;
     }
   }

@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -62,30 +61,26 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                         32.0))
               : double.infinity,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24.0),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: isVertical ? 6.0 : 8.0,
-                vertical: isVertical ? 8.0 : 6.0,
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isVertical ? 6.0 : 8.0,
+            vertical: isVertical ? 8.0 : 6.0,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xF21C2128), // Быстрый непрозрачный/матовый фон без GPU-blur
+            borderRadius: BorderRadius.circular(20.0),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 12.0,
+                offset: const Offset(0, 3),
               ),
-              decoration: BoxDecoration(
-                color: const Color(0xCC1A1A1A), // Темный матовый фон
-                borderRadius: BorderRadius.circular(24.0),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  width: 1.0,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 16.0,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
+            ],
+          ),
               child: Flex(
                 direction: isVertical ? Axis.vertical : Axis.horizontal,
                 mainAxisSize: MainAxisSize.min,
@@ -349,9 +344,7 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
               ),
             ),
           ),
-        ),
-      ),
-    );
+        );
   }
 
   Widget _buildInfiltrateMenu(BuildContext context, bool isVertical) {
@@ -359,6 +352,7 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     final isAnySubToolActive =
         activeTool == ToolType.infiltrate ||
         activeTool == ToolType.bowelInfiltrate ||
+        activeTool == ToolType.bowelInfiltrate2 ||
         activeTool == ToolType.gui;
 
     final subTools = [
@@ -372,7 +366,14 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
       _SubToolData(
         tool: ToolType.bowelInfiltrate,
         label: 'Инф. кишки',
-        tooltip: 'Инфильтрат кишки (коричневый)',
+        tooltip: 'Инфильтрат кишки (штамп)',
+        icon: Icons.waves,
+        color: const Color(0xFF5C4033),
+      ),
+      _SubToolData(
+        tool: ToolType.bowelInfiltrate2,
+        label: 'Инфильтрат 2',
+        tooltip: 'Инфильтрат 2 (дуга с фестонами)',
         icon: Icons.waves,
         color: const Color(0xFF5C4033),
       ),
@@ -391,7 +392,11 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           context,
           tool: data.tool,
           label: isVertical
-              ? (data.tool == ToolType.bowelInfiltrate ? 'Инф.киш' : data.label)
+              ? (data.tool == ToolType.bowelInfiltrate
+                  ? 'Инф.киш'
+                  : (data.tool == ToolType.bowelInfiltrate2
+                      ? 'Инф. 2'
+                      : data.label))
               : data.label,
           tooltip: data.tooltip,
           icon: data.icon,
@@ -449,8 +454,10 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         tool: defaultData.tool,
         label: isVertical
             ? (defaultData.tool == ToolType.bowelInfiltrate
-                  ? 'Инф.киш'
-                  : defaultData.label)
+                ? 'Инф.киш'
+                : (defaultData.tool == ToolType.bowelInfiltrate2
+                    ? 'Инф. 2'
+                    : defaultData.label))
             : defaultData.label,
         tooltip: defaultData.tooltip,
         icon: defaultData.icon,
@@ -1317,24 +1324,25 @@ class SettingsBubble extends StatelessWidget {
     ];
 
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16.0),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: isVertical
-                ? const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0)
-                : const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            decoration: BoxDecoration(
-              color: const Color(0xCC2A2A2A),
-              borderRadius: BorderRadius.circular(16.0),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15),
-                width: 1.0,
-              ),
+      child: Container(
+        padding: isVertical
+            ? const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0)
+            : const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
+        decoration: BoxDecoration(
+          color: const Color(0xF222272E),
+          borderRadius: BorderRadius.circular(16.0),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.12),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 10.0,
+              offset: const Offset(0, 3),
             ),
+          ],
+        ),
             child: SingleChildScrollView(
               scrollDirection: isVertical ? Axis.vertical : Axis.horizontal,
               child: Flex(
@@ -1345,9 +1353,7 @@ class SettingsBubble extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ),
-    );
+        );
   }
 }
 
@@ -1380,6 +1386,28 @@ class _ToolIconPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (tool == ToolType.bowelInfiltrate) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          'assets/images/infiltrat.png',
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => SizedBox(
+            width: 22,
+            height: 22,
+            child: CustomPaint(
+              painter: _ToolIconPainter(
+                tool: tool,
+                color: color,
+                isDashed: isDashed,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
       width: 22,
       height: 22,
@@ -1621,7 +1649,19 @@ class _ToolIconPainter extends CustomPainter {
         break;
 
       case ToolType.bowelInfiltrate:
-        // Инфильтрат кишки: коричневая дуга с фестонами
+        // Инфильтрат кишки (штамп PNG)
+        final fillBowel = Paint()
+          ..color = const Color(0xFF5C4033)
+          ..style = PaintingStyle.fill;
+        final rectBowel = RRect.fromRectAndRadius(
+          Rect.fromLTWH(2, 6, size.width - 4, size.height - 12),
+          const Radius.circular(3),
+        );
+        canvas.drawRRect(rectBowel, fillBowel);
+        break;
+
+      case ToolType.bowelInfiltrate2:
+        // Инфильтрат 2: коричневая дуга с фестонами
         final fill = Paint()
           ..color = const Color(0xFF5C4033)
           ..style = PaintingStyle.fill;

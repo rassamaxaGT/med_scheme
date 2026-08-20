@@ -249,13 +249,19 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
         // Автоматическая подгрузка изображений для пользовательских штампов из истории
         for (final action in state.history) {
-          if (action is StampAction && action.stampType == 'custom' && action.customStampPath != null) {
+          if (action is StampAction && action.customStampPath != null) {
             final path = action.customStampPath!;
             if (!_stampImages.containsKey(path)) {
               _stampImages[path] = null as dynamic; // Временная заглушка, чтобы не запускать загрузку повторно
               Future.microtask(() => _loadCustomStampImage(path));
             }
           }
+        }
+
+        // Также грузим 'assets/images/infiltrat.png' для штампа инфильтрата кишки
+        if (!_stampImages.containsKey('assets/images/infiltrat.png')) {
+          _stampImages['assets/images/infiltrat.png'] = null as dynamic;
+          Future.microtask(() => _loadCustomStampImage('assets/images/infiltrat.png'));
         }
 
         // Также грузим текущий выбранный кастомный штамп
@@ -1199,7 +1205,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       } else if (state.currentTool == ToolType.endometrioma ||
           state.currentTool == ToolType.myoma ||
           state.currentTool == ToolType.infiltrate ||
-          state.currentTool == ToolType.bowelInfiltrate ||
+          state.currentTool == ToolType.bowelInfiltrate2 ||
           state.currentTool == ToolType.adenomyosis ||
           state.currentTool == ToolType.gui ||
           state.currentTool == ToolType.cyst) {
@@ -1216,8 +1222,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                   ? 'myoma'
                   : state.currentTool == ToolType.infiltrate
                       ? 'infiltrate'
-                      : state.currentTool == ToolType.bowelInfiltrate
-                          ? 'bowelInfiltrate'
+                      : state.currentTool == ToolType.bowelInfiltrate2
+                          ? 'bowelInfiltrate2'
                           : state.currentTool == ToolType.gui
                               ? 'gui'
                               : state.currentTool == ToolType.cyst
@@ -1230,7 +1236,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           state.currentTool == ToolType.foci ||
           state.currentTool == ToolType.customStamp ||
           state.currentTool == ToolType.follicle ||
-          state.currentTool == ToolType.polyp) {
+          state.currentTool == ToolType.polyp ||
+          state.currentTool == ToolType.bowelInfiltrate) {
         // Штампы срабатывают мгновенно при нажатии
         if (state.currentTool == ToolType.customStamp && state.customStampPath == null) {
           return;
@@ -1240,16 +1247,20 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           color: state.currentColor,
           strokeWidth: state.currentStrokeWidth,
           position: localPosition,
-          stampType: state.currentTool == ToolType.customStamp
-              ? 'custom'
-              : state.currentTool == ToolType.iud
-                  ? 'iud'
-                  : state.currentTool == ToolType.foci
-                      ? 'foci'
-                      : state.currentTool == ToolType.follicle
-                          ? 'follicle'
-                          : 'polyp',
-          customStampPath: state.currentTool == ToolType.customStamp ? state.customStampPath : null,
+          stampType: state.currentTool == ToolType.bowelInfiltrate
+              ? 'bowelInfiltrate'
+              : (state.currentTool == ToolType.customStamp
+                  ? 'custom'
+                  : state.currentTool == ToolType.iud
+                      ? 'iud'
+                      : state.currentTool == ToolType.foci
+                          ? 'foci'
+                          : state.currentTool == ToolType.follicle
+                              ? 'follicle'
+                              : 'polyp'),
+          customStampPath: state.currentTool == ToolType.bowelInfiltrate
+              ? 'assets/images/infiltrat.png'
+              : (state.currentTool == ToolType.customStamp ? state.customStampPath : null),
           targetSchemePath: targetPath,
         );
         context.read<DrawBloc>().add(AddActionEvent(stampAction));
@@ -1572,16 +1583,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       if (finalAction is ShapeAction) {
         final shape = finalAction;
         if ((shape.endPoint - shape.startPoint).distance < 5.0) {
-          final defaultW = shape.shapeType == 'gui'
+          final double sf = CanvasPainter.getSchemeScaleFactor(
+            shape.targetSchemePath,
+            context.read<DrawBloc>().state.backgroundPaths,
+            _bgImagesNonNull,
+          );
+          final defaultW = (shape.shapeType == 'gui'
               ? 60.0
-              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate'
+              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate' || shape.shapeType == 'bowelInfiltrate2'
                   ? 80.0
-                  : 40.0);
-          final defaultH = shape.shapeType == 'gui'
+                  : 40.0)) * sf;
+          final defaultH = (shape.shapeType == 'gui'
               ? 36.0
-              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate'
+              : (shape.shapeType == 'infiltrate' || shape.shapeType == 'bowelInfiltrate' || shape.shapeType == 'bowelInfiltrate2'
                   ? 50.0
-                  : 40.0);
+                  : 40.0)) * sf;
           finalAction = ShapeAction(
             id: shape.id,
             color: shape.color,
@@ -1773,6 +1789,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       case ToolType.myoma:
       case ToolType.infiltrate:
       case ToolType.bowelInfiltrate:
+      case ToolType.bowelInfiltrate2:
       case ToolType.cyst:
         return SystemMouseCursors.precise;
       case ToolType.iud:

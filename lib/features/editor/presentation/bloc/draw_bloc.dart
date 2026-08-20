@@ -154,7 +154,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           event.tool == ToolType.polyp ||
           event.tool == ToolType.gui ||
           event.tool == ToolType.customStamp ||
-          event.tool == ToolType.iud) {
+          event.tool == ToolType.iud ||
+          event.tool == ToolType.bowelInfiltrate) {
         strokeWidth = 8.0;
       }
       emit(state.copyWith(
@@ -296,15 +297,19 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
               ? 'Таз'
               : event.pageType == 'uterus'
                   ? 'Матка'
-                  : 'Лист ${newIndex + 1}');
+                  : event.pageType == 'abdominal_wall'
+                      ? 'Брюшная стенка'
+                      : 'Лист ${newIndex + 1}');
 
       final defaultBgPaths = event.backgroundPath != null
           ? [event.backgroundPath!]
           : (event.pageType == 'pelvis'
               ? ['assets/schemes/standart_endo.jpg']
               : (event.pageType == 'uterus'
-                  ? ['assets/schemes/uterus.jpg']
-                  : const <String>[]));
+                  ? ['assets/schemes/uretus.png']
+                  : (event.pageType == 'abdominal_wall'
+                      ? ['assets/schemes/abdominal_wall_cross_section.png']
+                      : const <String>[])));
 
       final newPage = PageData(
         id: 'page_${DateTime.now().millisecondsSinceEpoch}',
@@ -352,6 +357,7 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       case ToolType.arrow:
         return const Color(0xFF000000); // Black
       case ToolType.bowelInfiltrate:
+      case ToolType.bowelInfiltrate2:
         return const Color(0xFF5C4033); // Brown
       case ToolType.gui:
         return const Color(0xFF8E24AA); // Purple

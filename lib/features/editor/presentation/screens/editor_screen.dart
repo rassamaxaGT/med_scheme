@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -19,6 +18,7 @@ import '../bloc/draw_state.dart';
 import '../bloc/project_bloc.dart';
 import '../widgets/canvas/canvas_widget.dart';
 import '../widgets/toolbox/floating_toolbox.dart';
+import '../widgets/dialogs/print_export_dialog.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key});
@@ -244,39 +244,44 @@ class _EditorScreenState extends State<EditorScreen> {
               );
             },
           ),
-          centerTitle: true,
-          backgroundColor: const Color(0x99181818),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          flexibleSpace: ClipRect(
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(color: Colors.transparent),
-            ),
-          ),
+          centerTitle: false,
+          backgroundColor: const Color(0xFF161B22),
+          elevation: 1,
+          scrolledUnderElevation: 1,
           actions: [
             BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
                 final isSelected = drawState.currentTool == ToolType.move;
                 return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
+                  padding: const EdgeInsets.only(right: 6.0),
                   child: Tooltip(
                     message: 'Движение (выбор и перемещение)',
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFF0F4C81)
-                            : Colors.white.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.open_with, size: 18),
-                        color: isSelected ? Colors.white : Colors.white70,
-                        onPressed: () {
-                          context.read<DrawBloc>().add(
-                            SelectToolEvent(ToolType.move),
-                          );
-                        },
+                    child: InkWell(
+                      onTap: () {
+                        context.read<DrawBloc>().add(
+                          SelectToolEvent(ToolType.move),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        height: 36,
+                        width: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFF0F4C81)
+                              : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF58A6FF) : Colors.white12,
+                            width: 1.0,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.open_with,
+                          size: 18,
+                          color: isSelected ? Colors.white : Colors.white70,
+                        ),
                       ),
                     ),
                   ),
@@ -285,68 +290,90 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
-                return GestureDetector(
-                  onTap: () => _showPatientIdDialog(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: drawState.patientId.isNotEmpty
-                            ? const Color(0xFF0F4C81)
-                            : Colors.white24,
-                        width: 1.0,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.person,
-                          size: 14,
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6.0),
+                  child: InkWell(
+                    onTap: () => _showPatientIdDialog(context),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
                           color: drawState.patientId.isNotEmpty
-                              ? const Color(0xFF1976D2)
-                              : Colors.white54,
+                              ? const Color(0xFF0F4C81)
+                              : Colors.white24,
+                          width: 1.0,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          drawState.patientId.isNotEmpty
-                              ? drawState.patientId
-                              : 'Указать пациента',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.person,
+                            size: 16,
                             color: drawState.patientId.isNotEmpty
-                                ? Colors.white
+                                ? const Color(0xFF58A6FF)
                                 : Colors.white54,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            drawState.patientId.isNotEmpty
+                                ? drawState.patientId
+                                : 'Указать пациента',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: drawState.patientId.isNotEmpty
+                                  ? Colors.white
+                                  : Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
+            Padding(
+              padding: const EdgeInsets.only(right: 6.0),
+              child: Tooltip(
+                message: 'Печать и экспорт отчета',
+                child: InkWell(
+                  onTap: () => PrintExportDialog.show(context),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 36,
+                    width: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white12, width: 1.0),
+                    ),
+                    child: const Icon(Icons.print, size: 18, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
             PopupMenuButton<String>(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 margin: const EdgeInsets.only(right: 8),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F4C81), // Classic Blue
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.folder, size: 14, color: Colors.white),
+                    Icon(Icons.folder, size: 16, color: Colors.white),
                     SizedBox(width: 4),
                     Text(
                       'Проект',
@@ -356,7 +383,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         color: Colors.white,
                       ),
                     ),
-                    Icon(Icons.arrow_drop_down, size: 14, color: Colors.white),
+                    Icon(Icons.arrow_drop_down, size: 16, color: Colors.white),
                   ],
                 ),
               ),
@@ -479,35 +506,55 @@ class _EditorScreenState extends State<EditorScreen> {
             BlocBuilder<DrawBloc, DrawState>(
               builder: (context, drawState) {
                 return Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2,
-                  ),
+                  height: 36,
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12, width: 1.0),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.undo, size: 20),
+                        icon: const Icon(Icons.undo, size: 18),
                         tooltip: 'Отмена (Undo)',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 36,
+                          maxWidth: 32,
+                          maxHeight: 36,
+                        ),
                         onPressed: drawState.history.isEmpty
                             ? null
                             : () => context.read<DrawBloc>().add(UndoEvent()),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.redo, size: 20),
+                        icon: const Icon(Icons.redo, size: 18),
                         tooltip: 'Повтор (Redo)',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 36,
+                          maxWidth: 32,
+                          maxHeight: 36,
+                        ),
                         onPressed: drawState.redoStack.isEmpty
                             ? null
                             : () => context.read<DrawBloc>().add(RedoEvent()),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.delete_sweep, size: 20),
+                        icon: const Icon(Icons.delete_sweep, size: 18),
                         tooltip: 'Очистить холст',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 36,
+                          maxWidth: 32,
+                          maxHeight: 36,
+                        ),
                         color: drawState.history.isEmpty
                             ? null
                             : Colors.redAccent.withValues(alpha: 0.8),
@@ -557,14 +604,14 @@ class _EditorScreenState extends State<EditorScreen> {
               valueListenable: _scaleNotifier,
               builder: (context, scale, _) {
                 return Container(
-                  margin: const EdgeInsets.only(right: 4),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  height: 36,
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12, width: 1.0),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -581,11 +628,11 @@ class _EditorScreenState extends State<EditorScreen> {
                       Tooltip(
                         message: 'Сбросить масштаб (Ctrl+0)',
                         child: InkWell(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                           onTap: () => _resetZoomNotifier.value++,
                           child: const Icon(
                             Icons.zoom_out_map,
-                            size: 14,
+                            size: 16,
                             color: Colors.white54,
                           ),
                         ),
@@ -594,48 +641,6 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                 );
               },
-            ),
-
-            PopupMenuButton<int>(
-              icon: const Icon(Icons.help_outline),
-              tooltip: 'Справочные легенды',
-              onSelected: (value) {
-                if (value == 1) {
-                  _showLegendDialog(
-                    context,
-                    'Легенда карты эндометриоза',
-                    'assets/images/endo_legend.png',
-                  );
-                } else if (value == 2) {
-                  _showLegendDialog(
-                    context,
-                    'Легенда классификации миом (FIGO)',
-                    'assets/images/myoma_legend.png',
-                  );
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 1,
-                  child: Row(
-                    children: [
-                      Icon(Icons.map, size: 18),
-                      SizedBox(width: 8),
-                      Text('Легенда эндометриоза'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 2,
-                  child: Row(
-                    children: [
-                      Icon(Icons.legend_toggle, size: 18),
-                      SizedBox(width: 8),
-                      Text('Легенда миом (FIGO)'),
-                    ],
-                  ),
-                ),
-              ],
             ),
           ],
         ),
@@ -1062,72 +1067,7 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _exportCanvas(BuildContext context) {
-    final drawState = context.read<DrawBloc>().state;
-    if (drawState.history.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('На холсте ничего не нарисовано для экспорта.'),
-        ),
-      );
-      return;
-    }
-
-    final patientId = drawState.patientId;
-    final defaultFilename = patientId.isNotEmpty
-        ? '${patientId}_${DateTime.now().millisecondsSinceEpoch}'
-        : 'экспорт_узи_${DateTime.now().millisecondsSinceEpoch}';
-    final nameController = TextEditingController(text: defaultFilename);
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Экспортировать схему с разметкой'),
-          content: TextField(
-            controller: nameController,
-            decoration: const InputDecoration(labelText: 'Имя файла'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                context.read<ProjectBloc>().add(
-                  ExportProjectEvent(
-                    projectName: nameController.text,
-                    actions: drawState.history,
-                    backgroundPath: drawState.backgroundPath,
-                    patientId: patientId,
-                  ),
-                );
-              },
-              child: const Text('Экспорт в PNG'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F4C81),
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                context.read<ProjectBloc>().add(
-                  ExportPdfEvent(
-                    projectName: nameController.text,
-                    actions: drawState.history,
-                    backgroundPath: drawState.backgroundPath,
-                    patientId: patientId,
-                  ),
-                );
-              },
-              child: const Text('Экспорт в PDF'),
-            ),
-          ],
-        );
-      },
-    );
+    PrintExportDialog.show(context);
   }
 
   void _pickBackgroundImage(BuildContext context) async {
@@ -1381,28 +1321,6 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _showLegendDialog(BuildContext context, String title, String assetPath) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(title),
-          content: Container(
-            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 500),
-            child: InteractiveViewer(
-              child: Image.asset(assetPath, fit: BoxFit.contain),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Закрыть'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   bool _handleKeyEvent(KeyEvent event) {
     if (!mounted) return false;
@@ -1676,7 +1594,11 @@ class _SchemeSelector extends StatelessWidget {
           },
           {
             'title': 'Матка',
-            'path': 'assets/schemes/uterus.jpg',
+            'path': 'assets/schemes/uretus.png',
+          },
+          {
+            'title': 'Брюшная стенка',
+            'path': 'assets/schemes/abdominal_wall_cross_section.png',
           },
         ];
 

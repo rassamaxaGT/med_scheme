@@ -4,6 +4,7 @@ import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import '../../domain/entities/project_data.dart';
 import '../../domain/entities/project_file_source.dart';
+import '../../domain/entities/report_config.dart';
 import '../../domain/repositories/project_repository.dart';
 import 'draw_state.dart';
 
@@ -13,6 +14,42 @@ abstract class ProjectEvent {}
 class InitializeProjectEvent extends ProjectEvent {}
 
 class RequestDirectoryEvent extends ProjectEvent {}
+
+class PrintReportEvent extends ProjectEvent {
+  final ProjectData project;
+  final ReportConfig config;
+
+  PrintReportEvent({
+    required this.project,
+    required this.config,
+  });
+}
+
+class ExportReportPdfEvent extends ProjectEvent {
+  final String projectName;
+  final ProjectData project;
+  final ReportConfig config;
+
+  ExportReportPdfEvent({
+    required this.projectName,
+    required this.project,
+    required this.config,
+  });
+}
+
+class ExportReportPngEvent extends ProjectEvent {
+  final String projectName;
+  final ProjectData project;
+  final ReportConfig config;
+  final PageData? singlePage;
+
+  ExportReportPngEvent({
+    required this.projectName,
+    required this.project,
+    required this.config,
+    this.singlePage,
+  });
+}
 
 class SaveProjectEvent extends ProjectEvent {
   final String projectName;
@@ -181,6 +218,64 @@ class ProjectBloc extends Bloc<ProjectEvent, ProjectState> {
         emit(ProjectDirectorySelected(_selectedDirectoryPath!));
       } catch (e) {
         emit(ProjectError('Ошибка экспорта: $e'));
+      }
+    });
+
+    on<PrintReportEvent>((event, emit) async {
+      emit(ProjectLoading());
+      try {
+        await projectRepository.printReport(
+          project: event.project,
+          config: event.config,
+        );
+        if (_selectedDirectoryPath != null) {
+          emit(ProjectDirectorySelected(_selectedDirectoryPath!));
+        } else {
+          emit(ProjectInitial());
+        }
+      } catch (e) {
+        emit(ProjectError('Ошибка отправки на печать: $e'));
+      }
+    });
+
+    on<ExportReportPdfEvent>((event, emit) async {
+      if (_selectedDirectoryPath == null) {
+        emit(ProjectError('Сначала выберите рабочую папку'));
+        return;
+      }
+      emit(ProjectLoading());
+      try {
+        final outputPath = await projectRepository.exportReportPdf(
+          directoryPath: _selectedDirectoryPath!,
+          filename: event.projectName,
+          project: event.project,
+          config: event.config,
+        );
+        emit(ProjectExported(outputPath));
+        emit(ProjectDirectorySelected(_selectedDirectoryPath!));
+      } catch (e) {
+        emit(ProjectError('Ошибка экспорта в PDF: $e'));
+      }
+    });
+
+    on<ExportReportPngEvent>((event, emit) async {
+      if (_selectedDirectoryPath == null) {
+        emit(ProjectError('Сначала выберите рабочую папку'));
+        return;
+      }
+      emit(ProjectLoading());
+      try {
+        final outputPath = await projectRepository.exportReportPng(
+          directoryPath: _selectedDirectoryPath!,
+          filename: event.projectName,
+          project: event.project,
+          config: event.config,
+          singlePage: event.singlePage,
+        );
+        emit(ProjectExported(outputPath));
+        emit(ProjectDirectorySelected(_selectedDirectoryPath!));
+      } catch (e) {
+        emit(ProjectError('Ошибка экспорта в PNG: $e'));
       }
     });
 

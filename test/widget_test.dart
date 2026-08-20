@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 import 'package:med_scheme/main.dart';
@@ -6,6 +7,7 @@ import 'package:med_scheme/features/editor/domain/entities/draw_action.dart';
 import 'package:med_scheme/features/editor/domain/entities/page_data.dart';
 import 'package:med_scheme/features/editor/domain/entities/project_data.dart';
 import 'package:med_scheme/features/editor/domain/entities/project_file_source.dart';
+import 'package:med_scheme/features/editor/domain/entities/report_config.dart';
 import 'package:med_scheme/features/editor/presentation/widgets/toolbox/floating_toolbox.dart';
 import 'package:med_scheme/features/editor/presentation/widgets/canvas/canvas_widget.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +49,35 @@ class FakeProjectRepository implements ProjectRepository {
     required String? backgroundPath,
     required String? patientId,
   }) async => 'test_output_path.pdf';
+
+  @override
+  Future<Uint8List> generateReportPdf({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async => Uint8List.fromList([0, 1, 2]);
+
+  @override
+  Future<void> printReport({
+    required ProjectData project,
+    required ReportConfig config,
+  }) async {}
+
+  @override
+  Future<String> exportReportPdf({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+  }) async => 'test_report_path.pdf';
+
+  @override
+  Future<String> exportReportPng({
+    required String directoryPath,
+    required String filename,
+    required ProjectData project,
+    required ReportConfig config,
+    PageData? singlePage,
+  }) async => 'test_report_path.png';
 
   @override
   Future<void> saveDirectoryPath(String path) async {}

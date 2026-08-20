@@ -14,7 +14,8 @@ enum ToolType {
   customStamp,  // пользовательский штамп из PNG
   move,         // перемещение нарисованных объектов
   // Новые инструменты
-  bowelInfiltrate,
+  bowelInfiltrate,  // штамп инфильтрата кишки (PNG)
+  bowelInfiltrate2, // прежний инфильтрат кишки (дуга с фестонами)
   gui,
   follicle,
   cyst, // киста (измеряемая по размеру, без заливки)
