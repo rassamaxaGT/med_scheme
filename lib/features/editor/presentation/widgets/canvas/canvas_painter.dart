@@ -57,6 +57,11 @@ class CanvasPainter extends CustomPainter {
        // Когда передан notifier — painter слушает его и перерисовывается без setState
        super(repaint: activeActionNotifier);
 
+  static const double minSelectionDimension = 125.0;
+  static const double standardCellWidth = 907.0;
+  static const double standardCellHeight = 1280.0;
+  static const Size standardSingleCanvasSize = Size(standardCellWidth, standardCellHeight);
+
   static Size getOriginalSchemeSize(String path, [ui.Image? image]) {
     if (image != null && image.width > 0 && image.height > 0) {
       return Size(image.width.toDouble(), image.height.toDouble());
@@ -99,26 +104,14 @@ class CanvasPainter extends CustomPainter {
   }
 
   static Size getCanvasBaseSize(List<String> paths, [Map<String, ui.Image>? bgImages]) {
-    if (paths.isEmpty) return const Size(1280.0, 960.0);
+    if (paths.isEmpty) return standardSingleCanvasSize;
     final count = paths.length;
-
-    // Используем максимальное нативное разрешение фонов без искусственного сжатия
-    double cellH = 1280.0;
-    for (final p in paths) {
-      final s = getOriginalSchemeSize(p, bgImages?[p]);
-      if (s.height > cellH) cellH = s.height;
-    }
-
-    final double col0W = cellH * getSchemeAspectRatio(paths[0], bgImages?[paths[0]]);
-    final double col1W = (paths.length > 1)
-        ? cellH * getSchemeAspectRatio(paths[1], bgImages?[paths[1]])
-        : 0.0;
 
     final int cols = count <= 1 ? 1 : 2;
     final int rows = count <= 2 ? 1 : (count / 2).ceil();
 
-    final double totalW = cols == 1 ? col0W : (col0W + col1W);
-    final double totalH = rows * cellH;
+    final double totalW = cols * standardCellWidth;
+    final double totalH = rows * standardCellHeight;
     return Size(totalW, totalH);
   }
 
@@ -154,22 +147,13 @@ class CanvasPainter extends CustomPainter {
     final count = activePaths.length;
     final int cols = count <= 1 ? 1 : 2;
 
-    double cellH = 1280.0;
-    for (final p in activePaths) {
-      final s = getOriginalSchemeSize(p, bgImages?[p]);
-      if (s.height > cellH) cellH = s.height;
-    }
-
-    final double col0W = cellH * getSchemeAspectRatio(activePaths.isEmpty ? '' : activePaths[0], bgImages?[activePaths[0]]);
-    final double col1W = (activePaths.length > 1)
-        ? cellH * getSchemeAspectRatio(activePaths[1], bgImages?[activePaths[1]])
-        : 0.0;
+    const double cellW = standardCellWidth;
+    const double cellH = standardCellHeight;
 
     final int col = idx % cols;
     final int row = idx ~/ cols;
 
-    final double cellW = col == 0 ? col0W : col1W;
-    final double cellLeft = col == 0 ? 0.0 : col0W;
+    final double cellLeft = col * cellW;
     final double cellTop = row * cellH;
 
     final origSize = getOriginalSchemeSize(path, bgImages?[path]);
@@ -334,12 +318,8 @@ class CanvasPainter extends CustomPainter {
       final count = activePaths.length;
       final int cols = count == 1 ? 1 : 2;
       final int rows = count <= 2 ? 1 : (count / 2).ceil();
+      final double cellW = drawRect.width / cols;
       final double cellH = drawRect.height / rows;
-
-      final double col0W = cellH * getSchemeAspectRatio(activePaths[0], bgImages[activePaths[0]]);
-      final double col1W = (activePaths.length > 1)
-          ? cellH * getSchemeAspectRatio(activePaths[1], bgImages[activePaths[1]])
-          : 0.0;
 
       final gridDividerPaint = Paint()
         ..color = const Color(0xFFB0BEC5)
@@ -349,10 +329,7 @@ class CanvasPainter extends CustomPainter {
       for (int i = 0; i < activePaths.length; i++) {
         final int col = i % cols;
         final int row = i ~/ cols;
-        final double cellW = col == 0 ? col0W : col1W;
-        final double cellLeft = col == 0
-            ? drawRect.left
-            : (drawRect.left + col0W);
+        final double cellLeft = drawRect.left + col * cellW;
         final double cellTop = drawRect.top + row * cellH;
 
         final cellRect = Rect.fromLTWH(cellLeft, cellTop, cellW, cellH);
@@ -507,7 +484,10 @@ class CanvasPainter extends CustomPainter {
             activePaths.contains(selectedAction.targetSchemePath)) {
           final canvasAction = toCanvasAction(selectedAction, activePaths, bgImages);
           _drawAction(canvas, canvasAction);
-          _drawSelectionBorder(canvas, canvasAction);
+          _drawSelectionBorder(
+            canvas,
+            canvasAction,
+          );
         }
       }
     }
@@ -759,8 +739,35 @@ class CanvasPainter extends CustomPainter {
     return rotationCenter + rotated + Offset(action.offsetX, action.offsetY);
   }
 
-  void _drawSelectionBorder(Canvas canvas, DrawAction action) {
+  static Rect getActionSelectionBounds(DrawAction action) {
     final originalBounds = getOriginalActionBounds(action);
+    if (originalBounds == Rect.zero) return Rect.zero;
+
+    final double sx = action.scaleX.abs() == 0 ? 1.0 : action.scaleX.abs();
+    final double sy = action.scaleY.abs() == 0 ? 1.0 : action.scaleY.abs();
+
+    final double effectiveW = originalBounds.width * sx;
+    final double effectiveH = originalBounds.height * sy;
+
+    if (effectiveW >= minSelectionDimension && effectiveH >= minSelectionDimension) {
+      return originalBounds;
+    }
+
+    final double boxW = math.max(originalBounds.width, minSelectionDimension / sx);
+    final double boxH = math.max(originalBounds.height, minSelectionDimension / sy);
+
+    return Rect.fromCenter(
+      center: originalBounds.center,
+      width: boxW,
+      height: boxH,
+    );
+  }
+
+  void _drawSelectionBorder(
+    Canvas canvas,
+    DrawAction action,
+  ) {
+    final originalBounds = getActionSelectionBounds(action);
     if (originalBounds == Rect.zero) return;
 
     double rotation = 0.0;
