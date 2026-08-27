@@ -67,7 +67,9 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
             vertical: isVertical ? 8.0 : 6.0,
           ),
           decoration: BoxDecoration(
-            color: const Color(0xF21C2128), // Быстрый непрозрачный/матовый фон без GPU-blur
+            color: const Color(
+              0xF21C2128,
+            ), // Быстрый непрозрачный/матовый фон без GPU-blur
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(
               color: Colors.white.withValues(alpha: 0.12),
@@ -81,270 +83,258 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
               ),
             ],
           ),
-              child: Flex(
-                direction: isVertical ? Axis.vertical : Axis.horizontal,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Зона захвата для перетаскивания (Drag Handle) - СНАРУЖИ SingleChildScrollView
-                  GestureDetector(
-                    onPanStart: (_) => widget.onDragStart?.call(),
-                    onPanUpdate: (details) =>
-                        widget.onDragUpdate(details.delta),
-                    onPanEnd: (_) => widget.onDragEnd?.call(),
-                    onPanCancel: () => widget.onDragEnd?.call(),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.grab,
-                      child: Container(
-                        color: Colors
-                            .transparent, // Делает всю область кликабельной
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isVertical ? 16.0 : 16.0,
-                          vertical: isVertical ? 16.0 : 12.0,
-                        ),
-                        child: Icon(
-                          Icons.drag_indicator,
-                          color: Colors.white.withValues(alpha: 0.6),
-                          size: 24,
-                        ),
-                      ),
+          child: Flex(
+            direction: isVertical ? Axis.vertical : Axis.horizontal,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Зона захвата для перетаскивания (Drag Handle) - СНАРУЖИ SingleChildScrollView
+              GestureDetector(
+                onPanStart: (_) => widget.onDragStart?.call(),
+                onPanUpdate: (details) => widget.onDragUpdate(details.delta),
+                onPanEnd: (_) => widget.onDragEnd?.call(),
+                onPanCancel: () => widget.onDragEnd?.call(),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Container(
+                    color:
+                        Colors.transparent, // Делает всю область кликабельной
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isVertical ? 16.0 : 16.0,
+                      vertical: isVertical ? 16.0 : 12.0,
+                    ),
+                    child: Icon(
+                      Icons.drag_indicator,
+                      color: Colors.white.withValues(alpha: 0.6),
+                      size: 24,
                     ),
                   ),
-                  SizedBox(
-                    width: isVertical ? 0.0 : 4.0,
-                    height: isVertical ? 4.0 : 0.0,
-                  ),
-                  Container(
-                    height: isVertical ? 1.0 : 24.0,
-                    width: isVertical ? 24.0 : 1.0,
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
-                  SizedBox(
-                    width: isVertical ? 0.0 : 4.0,
-                    height: isVertical ? 4.0 : 0.0,
-                  ),
-                  // Список инструментов внутри пролистываемой области
-                  Flexible(
-                    child: SingleChildScrollView(
-                      scrollDirection: isVertical
-                          ? Axis.vertical
-                          : Axis.horizontal,
-                      child: Flex(
-                        direction: isVertical ? Axis.vertical : Axis.horizontal,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 1. Инфильтрат (с раскрывающимся подменю: Инфильтрат брюшины / Инфильтрат кишки / ГУИ)
-                          _buildInfiltrateMenu(context, isVertical),
-
-                          // 2. Эндометриома
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.endometrioma,
-                            label: isVertical ? 'Эндомет.' : 'Эндометриома',
-                            tooltip: 'Эндометриома (коричневый круг)',
-                            icon: Icons.circle,
-                            customColor: const Color(0xFF5C4033),
-                            isVertical: isVertical,
-                          ),
-
-                          // 3. Спайки
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.adhesions,
-                            label: 'Спайки',
-                            tooltip: 'Спайки (паутина)',
-                            icon: Icons.grain,
-                            customColor: const Color(0xFF9E9E9E), // Grey
-                            isVertical: isVertical,
-                          ),
-
-                          // 4. Фиброз
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.fibrosis,
-                            label: 'Фиброз',
-                            tooltip: 'Фиброз (кисть со штриховкой)',
-                            icon: Icons.linear_scale,
-                            isVertical: isVertical,
-                          ),
-
-                          // 5. Миома
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.myoma,
-                            label: 'Миома',
-                            tooltip: 'Миома (розовая/фуксия)',
-                            icon: Icons.circle_outlined,
-                            customColor: const Color(
-                              0xFFFF69B4,
-                            ), // Pink/Fuchsia
-                            isVertical: isVertical,
-                          ),
-
-                          // 6. ВМС
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.iud,
-                            label: 'ВМС',
-                            tooltip: 'ВМС (спираль)',
-                            icon: Icons.webhook,
-                            customColor: const Color(0xFF000000), // Black
-                            isVertical: isVertical,
-                          ),
-
-                          // 7. Очаг
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.foci,
-                            label: 'Очаг',
-                            tooltip: 'Очаг эндометриоза',
-                            icon: Icons.bubble_chart,
-                            customColor: const Color(
-                              0xFF880E4F,
-                            ), // Cherry / Вишневый
-                            isVertical: isVertical,
-                          ),
-
-                          // 8. Фолликул
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.follicle,
-                            label: 'Фоллик.',
-                            tooltip: 'Фолликул (фиксированный круг 8px)',
-                            icon: Icons.radio_button_unchecked,
-                            customColor: const Color(0xFF03A9F4), // Light Blue
-                            isVertical: isVertical,
-                          ),
-
-                          // 8.1 Киста (измеряемая овалами, без заливки)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.cyst,
-                            label: 'Киста',
-                            tooltip: 'Киста (измеряемая по размеру, без заливки)',
-                            icon: Icons.panorama_fish_eye,
-                            customColor: const Color(0xFF03A9F4), // Light Blue / Cyan
-                            isVertical: isVertical,
-                          ),
-
-                          // 9. Аденомиоз (новый)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.adenomyosis,
-                            label: 'Аденом.',
-                            tooltip:
-                                'Узловой аденомиоз (вишневый размытый круг)',
-                            icon: Icons.blur_on,
-                            customColor: const Color(0xFF880E4F), // Cherry
-                            isVertical: isVertical,
-                          ),
-
-                          // 10. Полип (новый)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.polyp,
-                            label: 'Полип',
-                            tooltip: 'Полип эндометрия',
-                            icon: Icons.spa,
-                            customColor: const Color(
-                              0xFFFF7043,
-                            ), // Peach/Orange
-                            isVertical: isVertical,
-                          ),
-
-                          // 11. PNG Штамп
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.customStamp,
-                            label: 'Штамп',
-                            tooltip: 'Пользовательский штамп (PNG)',
-                            icon: Icons.image_outlined,
-                            isVertical: isVertical,
-                          ),
-
-                          // 12. Линия расстояния (dashed)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.arrow,
-                            label: isVertical ? 'Расст.' : 'Расстояние',
-                            tooltip: 'Линия измерения расстояния (пунктир)',
-                            icon: Icons.linear_scale,
-                            isVertical: isVertical,
-                            isDashedForce: true,
-                            isSelectedOverride:
-                                widget.currentTool == ToolType.arrow &&
-                                context
-                                    .read<DrawBloc>()
-                                    .state
-                                    .currentLineDashed,
-                            onTapOverride: () {
-                              context.read<DrawBloc>().add(
-                                ToggleLineDashedEvent(true),
-                              );
-                              widget.onToolSelected(ToolType.arrow);
-                            },
-                          ),
-
-                          // 13. Линия-указатель (solid arrow)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.arrow,
-                            label: isVertical ? 'Указат.' : 'Указатель',
-                            tooltip: 'Линия-указатель (стрелка)',
-                            icon: Icons.arrow_outward,
-                            isVertical: isVertical,
-                            isDashedForce: false,
-                            isSelectedOverride:
-                                widget.currentTool == ToolType.arrow &&
-                                !context
-                                    .read<DrawBloc>()
-                                    .state
-                                    .currentLineDashed,
-                            onTapOverride: () {
-                              context.read<DrawBloc>().add(
-                                ToggleLineDashedEvent(false),
-                              );
-                              widget.onToolSelected(ToolType.arrow);
-                            },
-                          ),
-
-                          // 14. Кисть (pencil)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.pencil,
-                            label: 'Кисть',
-                            tooltip: 'Обычная кисть',
-                            icon: Icons.brush,
-                            isVertical: isVertical,
-                          ),
-
-                          // 14.1 Спрей (баллончик)
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.spray,
-                            label: 'Спрей',
-                            tooltip: 'Спрей / Баллончик',
-                            icon: Icons.blur_on,
-                            isVertical: isVertical,
-                          ),
-
-                          // 15. Ластик
-                          _buildToolButton(
-                            context,
-                            tool: ToolType.eraser,
-                            label: 'Ластик',
-                            tooltip: 'Ластик',
-                            icon: Icons.cleaning_services,
-                            isVertical: isVertical,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              SizedBox(
+                width: isVertical ? 0.0 : 4.0,
+                height: isVertical ? 4.0 : 0.0,
+              ),
+              Container(
+                height: isVertical ? 1.0 : 24.0,
+                width: isVertical ? 24.0 : 1.0,
+                color: Colors.white.withValues(alpha: 0.15),
+              ),
+              SizedBox(
+                width: isVertical ? 0.0 : 4.0,
+                height: isVertical ? 4.0 : 0.0,
+              ),
+              // Список инструментов внутри пролистываемой области
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: isVertical ? Axis.vertical : Axis.horizontal,
+                  child: Flex(
+                    direction: isVertical ? Axis.vertical : Axis.horizontal,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 1. Инфильтрат (с раскрывающимся подменю: Инфильтрат брюшины / Инфильтрат кишки / ГУИ)
+                      _buildInfiltrateMenu(context, isVertical),
+
+                      // 2. Эндометриома
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.endometrioma,
+                        label: isVertical ? 'Эндомет.' : 'Эндометриома',
+                        tooltip: 'Эндометриома (коричневый круг)',
+                        icon: Icons.circle,
+                        customColor: const Color(0xFF5C4033),
+                        isVertical: isVertical,
+                      ),
+
+                      // 3. Спайки
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.adhesions,
+                        label: 'Спайки',
+                        tooltip: 'Спайки (паутина)',
+                        icon: Icons.grain,
+                        customColor: const Color(0xFF9E9E9E), // Grey
+                        isVertical: isVertical,
+                      ),
+
+                      // 4. Фиброз
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.fibrosis,
+                        label: 'Фиброз',
+                        tooltip: 'Фиброз (кисть со штриховкой)',
+                        icon: Icons.linear_scale,
+                        isVertical: isVertical,
+                      ),
+
+                      // 5. Миома
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.myoma,
+                        label: 'Миома',
+                        tooltip: 'Миома (розовая/фуксия)',
+                        icon: Icons.circle_outlined,
+                        customColor: const Color(0xFFFF69B4), // Pink/Fuchsia
+                        isVertical: isVertical,
+                      ),
+
+                      // 6. ВМС
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.iud,
+                        label: 'ВМС',
+                        tooltip: 'ВМС (спираль)',
+                        icon: Icons.webhook,
+                        customColor: const Color(0xFF000000), // Black
+                        isVertical: isVertical,
+                      ),
+
+                      // 7. Очаг
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.foci,
+                        label: 'Очаг',
+                        tooltip: 'Очаг эндометриоза',
+                        icon: Icons.bubble_chart,
+                        customColor: const Color(
+                          0xFF880E4F,
+                        ), // Cherry / Вишневый
+                        isVertical: isVertical,
+                      ),
+
+                      // 8. Фолликул
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.follicle,
+                        label: 'Фоллик.',
+                        tooltip: 'Фолликул (фиксированный круг 8px)',
+                        icon: Icons.radio_button_unchecked,
+                        customColor: const Color(0xFF03A9F4), // Light Blue
+                        isVertical: isVertical,
+                      ),
+
+                      // 8.1 Киста (измеряемая овалами, без заливки)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.cyst,
+                        label: 'Киста',
+                        tooltip: 'Киста (измеряемая по размеру, без заливки)',
+                        icon: Icons.panorama_fish_eye,
+                        customColor: const Color(
+                          0xFF03A9F4,
+                        ), // Light Blue / Cyan
+                        isVertical: isVertical,
+                      ),
+
+                      // 9. Аденомиоз (новый)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.adenomyosis,
+                        label: 'Аденом.',
+                        tooltip: 'Узловой аденомиоз (вишневый размытый круг)',
+                        icon: Icons.blur_on,
+                        customColor: const Color(0xFF880E4F), // Cherry
+                        isVertical: isVertical,
+                      ),
+
+                      // 10. Полип (новый)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.polyp,
+                        label: 'Полип',
+                        tooltip: 'Полип эндометрия',
+                        icon: Icons.spa,
+                        customColor: const Color(0xFFFF7043), // Peach/Orange
+                        isVertical: isVertical,
+                      ),
+
+                      // 11. PNG Штамп
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.customStamp,
+                        label: 'Штамп',
+                        tooltip: 'Пользовательский штамп (PNG)',
+                        icon: Icons.image_outlined,
+                        isVertical: isVertical,
+                      ),
+
+                      // 12. Линия расстояния (dashed)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.arrow,
+                        label: isVertical ? 'Расст.' : 'Расстояние',
+                        tooltip: 'Линия измерения расстояния (пунктир)',
+                        icon: Icons.linear_scale,
+                        isVertical: isVertical,
+                        isDashedForce: true,
+                        isSelectedOverride:
+                            widget.currentTool == ToolType.arrow &&
+                            context.read<DrawBloc>().state.currentLineDashed,
+                        onTapOverride: () {
+                          context.read<DrawBloc>().add(
+                            ToggleLineDashedEvent(true),
+                          );
+                          widget.onToolSelected(ToolType.arrow);
+                        },
+                      ),
+
+                      // 13. Линия-указатель (solid arrow)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.arrow,
+                        label: isVertical ? 'Указат.' : 'Указатель',
+                        tooltip: 'Линия-указатель (стрелка)',
+                        icon: Icons.arrow_outward,
+                        isVertical: isVertical,
+                        isDashedForce: false,
+                        isSelectedOverride:
+                            widget.currentTool == ToolType.arrow &&
+                            !context.read<DrawBloc>().state.currentLineDashed,
+                        onTapOverride: () {
+                          context.read<DrawBloc>().add(
+                            ToggleLineDashedEvent(false),
+                          );
+                          widget.onToolSelected(ToolType.arrow);
+                        },
+                      ),
+
+                      // 14. Кисть (pencil)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.pencil,
+                        label: 'Кисть',
+                        tooltip: 'Обычная кисть',
+                        icon: Icons.brush,
+                        isVertical: isVertical,
+                      ),
+
+                      // 14.1 Спрей (баллончик)
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.spray,
+                        label: 'Спрей',
+                        tooltip: 'Спрей / Баллончик',
+                        icon: Icons.blur_on,
+                        isVertical: isVertical,
+                      ),
+
+                      // 15. Ластик
+                      _buildToolButton(
+                        context,
+                        tool: ToolType.eraser,
+                        label: 'Ластик',
+                        tooltip: 'Ластик',
+                        icon: Icons.cleaning_services,
+                        isVertical: isVertical,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
+        ),
+      ),
+    );
   }
 
   Widget _buildInfiltrateMenu(BuildContext context, bool isVertical) {
@@ -393,10 +383,10 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           tool: data.tool,
           label: isVertical
               ? (data.tool == ToolType.bowelInfiltrate
-                  ? 'Инф.киш'
-                  : (data.tool == ToolType.bowelInfiltrate2
-                      ? 'Инф. 2'
-                      : data.label))
+                    ? 'Инф.киш'
+                    : (data.tool == ToolType.bowelInfiltrate2
+                          ? 'Инф. 2'
+                          : data.label))
               : data.label,
           tooltip: data.tooltip,
           icon: data.icon,
@@ -454,10 +444,10 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         tool: defaultData.tool,
         label: isVertical
             ? (defaultData.tool == ToolType.bowelInfiltrate
-                ? 'Инф.киш'
-                : (defaultData.tool == ToolType.bowelInfiltrate2
-                    ? 'Инф. 2'
-                    : defaultData.label))
+                  ? 'Инф.киш'
+                  : (defaultData.tool == ToolType.bowelInfiltrate2
+                        ? 'Инф. 2'
+                        : defaultData.label))
             : defaultData.label,
         tooltip: defaultData.tooltip,
         icon: defaultData.icon,
@@ -476,7 +466,9 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
               vertical: isVertical ? 2.0 : 12.0,
             ),
             child: Icon(
-              isVertical ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+              isVertical
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_right,
               size: 16,
               color: isAnySubToolActive ? Colors.white : Colors.white70,
             ),
@@ -563,8 +555,15 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                   child: Center(
                     child: _ToolIconPreview(
                       tool: tool,
-                      color: customColor ?? (isSelected ? Colors.white : Colors.white.withValues(alpha: 0.8)),
-                      isDashed: isDashedForce ?? (tool == ToolType.arrow && context.read<DrawBloc>().state.currentLineDashed),
+                      color:
+                          customColor ??
+                          (isSelected
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.8)),
+                      isDashed:
+                          isDashedForce ??
+                          (tool == ToolType.arrow &&
+                              context.read<DrawBloc>().state.currentLineDashed),
                     ),
                   ),
                 ),
@@ -749,7 +748,7 @@ class SettingsBubble extends StatelessWidget {
 
     final children = <Widget>[
       isVertical
-          ? Tooltip(
+          ? _RightTooltip(
               message: 'Загрузить PNG штамп',
               child: InkWell(
                 onTap: pickStamp,
@@ -792,7 +791,7 @@ class SettingsBubble extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
             child: isVertical
-                ? Tooltip(
+                ? _RightTooltip(
                     message: filename,
                     child: GestureDetector(
                       onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
@@ -1115,6 +1114,8 @@ class SettingsBubble extends StatelessWidget {
     bool isVertical,
     bool showColor,
   ) {
+    final bool showSliderPreview = currentTool != ToolType.bowelInfiltrate;
+
     final preview = Container(
       width: 24,
       height: 24,
@@ -1132,13 +1133,14 @@ class SettingsBubble extends StatelessWidget {
     final labelText = currentTool == ToolType.spray
         ? 'Конус: ${currentStrokeWidth.round()} px'
         : (currentTool == ToolType.iud ||
-                currentTool == ToolType.foci ||
-                currentTool == ToolType.follicle ||
-                currentTool == ToolType.polyp ||
-                currentTool == ToolType.gui ||
-                currentTool == ToolType.customStamp)
-            ? 'Размер: ${currentStrokeWidth.round()}'
-            : '${currentStrokeWidth.round()} px';
+              currentTool == ToolType.foci ||
+              currentTool == ToolType.follicle ||
+              currentTool == ToolType.polyp ||
+              currentTool == ToolType.gui ||
+              currentTool == ToolType.customStamp ||
+              currentTool == ToolType.bowelInfiltrate)
+        ? 'Размер: ${currentStrokeWidth.round()}'
+        : '${currentStrokeWidth.round()} px';
 
     final label = Text(
       labelText,
@@ -1170,8 +1172,7 @@ class SettingsBubble extends StatelessWidget {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          preview,
-          const SizedBox(height: 4),
+          if (showSliderPreview) ...[preview, const SizedBox(height: 4)],
           RotatedBox(
             quarterTurns: 3,
             child: SizedBox(
@@ -1188,8 +1189,7 @@ class SettingsBubble extends StatelessWidget {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          preview,
-          const SizedBox(width: 8),
+          if (showSliderPreview) ...[preview, const SizedBox(width: 8)],
           SizedBox(
             width: 120,
             height: 24,
@@ -1212,61 +1212,135 @@ class SettingsBubble extends StatelessWidget {
         : const EdgeInsets.symmetric(horizontal: 12.0),
   );
 
-  Widget _buildEraserModeToggle(BuildContext context, bool isVertical) {
+  Widget _buildEraserModeSelector(BuildContext context, bool isVertical) {
     final state = context.watch<DrawBloc>().state;
-    final isAnnotationsOnly = state.eraserTarget == EraserTarget.annotationsOnly;
+    final currentTarget = state.eraserTarget;
 
-    return GestureDetector(
-      onTap: () {
-        final newTarget = isAnnotationsOnly
-            ? EraserTarget.everything
-            : EraserTarget.annotationsOnly;
-        context.read<DrawBloc>().add(SetEraserTargetEvent(newTarget));
-      },
-      child: Tooltip(
-        message: isAnnotationsOnly ? 'Режим: Только условные обозначения' : 'Режим: Стирать всё (с фоном)',
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: isVertical ? 6.0 : 10.0,
-            vertical: isVertical ? 6.0 : 5.0,
-          ),
-          decoration: BoxDecoration(
-            color: isAnnotationsOnly
-                ? const Color(0xFF0F4C81).withValues(alpha: 0.4)
-                : Colors.orangeAccent.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(8.0),
-            border: Border.all(
-              color: isAnnotationsOnly ? const Color(0xFF0F4C81) : Colors.orangeAccent,
-              width: 1.0,
+    final options = [
+      (
+        target: EraserTarget.annotationsOnly,
+        label: 'Стирать объекты',
+        icon: Icons.layers_clear_outlined,
+        tooltip: 'Стирать только объекты (не трогая фон)',
+        color: const Color(0xFF0F4C81),
+        borderColor: const Color(0xFF64B5F6),
+      ),
+      (
+        target: EraserTarget.backgroundOnly,
+        label: 'Стирать фон',
+        icon: Icons.image_not_supported_outlined,
+        tooltip: 'Стирать только фон (не трогая объекты)',
+        color: const Color(0xFF00695C),
+        borderColor: const Color(0xFF4DB6AC),
+      ),
+      (
+        target: EraserTarget.everything,
+        label: 'Стирать всё',
+        icon: Icons.delete,
+        tooltip: 'Стирать всё (и объекты, и фон)',
+        color: const Color(0xFFE65100),
+        borderColor: Colors.orangeAccent,
+      ),
+    ];
+
+    if (isVertical) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((opt) {
+          final isSelected = currentTarget == opt.target;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3.0),
+            child: _RightTooltip(
+              message: opt.tooltip,
+              child: GestureDetector(
+                onTap: () {
+                  context.read<DrawBloc>().add(
+                    SetEraserTargetEvent(opt.target),
+                  );
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? opt.color.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8.0),
+                    border: Border.all(
+                      color: isSelected ? opt.borderColor : Colors.white12,
+                      width: isSelected ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Icon(
+                    opt.icon,
+                    size: 17,
+                    color: isSelected ? opt.borderColor : Colors.white70,
+                  ),
+                ),
+              ),
             ),
-          ),
-          child: isVertical
-              ? Icon(
-                  isAnnotationsOnly ? Icons.layers_clear : Icons.auto_fix_high,
-                  size: 18,
-                  color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
-                )
-              : Row(
+          );
+        }).toList(),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: options.map((opt) {
+        final isSelected = currentTarget == opt.target;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.0),
+          child: _RightTooltip(
+            message: opt.tooltip,
+            child: GestureDetector(
+              onTap: () {
+                context.read<DrawBloc>().add(SetEraserTargetEvent(opt.target));
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10.0,
+                  vertical: 5.0,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? opt.color.withValues(alpha: 0.55)
+                      : Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8.0),
+                  border: Border.all(
+                    color: isSelected ? opt.borderColor : Colors.white12,
+                    width: isSelected ? 1.5 : 1.0,
+                  ),
+                ),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isAnnotationsOnly ? Icons.layers_clear : Icons.auto_fix_high,
-                      size: 16,
-                      color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
+                      opt.icon,
+                      size: 14,
+                      color: isSelected ? opt.borderColor : Colors.white70,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 8),
                     Text(
-                      isAnnotationsOnly ? 'Только обозначения' : 'Стирать всё (с фоном)',
+                      opt.label,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: isAnnotationsOnly ? Colors.white : Colors.orangeAccent,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        color: isSelected ? Colors.white : Colors.white70,
                       ),
                     ),
                   ],
                 ),
-        ),
-      ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1295,7 +1369,8 @@ class SettingsBubble extends StatelessWidget {
         currentTool == ToolType.follicle ||
         currentTool == ToolType.cyst ||
         currentTool == ToolType.adenomyosis ||
-        currentTool == ToolType.polyp;
+        currentTool == ToolType.polyp ||
+        currentTool == ToolType.bowelInfiltrate;
 
     final bool showCustomStamps = currentTool == ToolType.customStamp;
     final bool isVertical = orientation != ToolboxOrientation.horizontal;
@@ -1304,7 +1379,7 @@ class SettingsBubble extends StatelessWidget {
     // независимый от ориентации — затем оборачиваем в Flex с нужным Axis.
     final children = <Widget>[
       if (currentTool == ToolType.eraser) ...[
-        _buildEraserModeToggle(context, isVertical),
+        _buildEraserModeSelector(context, isVertical),
         _buildDivider(isVertical),
       ],
       if (currentTool == ToolType.arrow || currentTool == ToolType.pencil) ...[
@@ -1343,17 +1418,17 @@ class SettingsBubble extends StatelessWidget {
             ),
           ],
         ),
-            child: SingleChildScrollView(
-              scrollDirection: isVertical ? Axis.vertical : Axis.horizontal,
-              child: Flex(
-                direction: isVertical ? Axis.vertical : Axis.horizontal,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: children,
-              ),
-            ),
+        child: SingleChildScrollView(
+          scrollDirection: isVertical ? Axis.vertical : Axis.horizontal,
+          child: Flex(
+            direction: isVertical ? Axis.vertical : Axis.horizontal,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: children,
           ),
-        );
+        ),
+      ),
+    );
   }
 }
 
@@ -1412,11 +1487,7 @@ class _ToolIconPreview extends StatelessWidget {
       width: 22,
       height: 22,
       child: CustomPaint(
-        painter: _ToolIconPainter(
-          tool: tool,
-          color: color,
-          isDashed: isDashed,
-        ),
+        painter: _ToolIconPainter(tool: tool, color: color, isDashed: isDashed),
       ),
     );
   }
@@ -1480,7 +1551,11 @@ class _ToolIconPainter extends CustomPainter {
         canvas.drawLine(p2, p3, paint);
         canvas.drawLine(p1, p2, paint);
         canvas.drawLine(p3, p4, paint);
-        canvas.drawLine(Offset(p1.dx, size.height / 2), Offset(size.width - p1.dx, size.height / 2), paint);
+        canvas.drawLine(
+          Offset(p1.dx, size.height / 2),
+          Offset(size.width - p1.dx, size.height / 2),
+          paint,
+        );
         break;
 
       case ToolType.fibrosis:
@@ -1530,7 +1605,11 @@ class _ToolIconPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round;
 
         canvas.drawLine(const Offset(4, 4), Offset(size.width - 4, 4), paint);
-        canvas.drawLine(Offset(center.dx, 4), Offset(center.dx, size.height - 3), paint);
+        canvas.drawLine(
+          Offset(center.dx, 4),
+          Offset(center.dx, size.height - 3),
+          paint,
+        );
         break;
 
       case ToolType.foci:
@@ -1539,7 +1618,11 @@ class _ToolIconPainter extends CustomPainter {
           ..color = const Color(0xFF880E4F)
           ..style = PaintingStyle.fill;
         canvas.drawCircle(center, radius * 0.7, fill);
-        canvas.drawCircle(Offset(center.dx - 5, center.dy - 4), radius * 0.3, fill);
+        canvas.drawCircle(
+          Offset(center.dx - 5, center.dy - 4),
+          radius * 0.3,
+          fill,
+        );
         break;
 
       case ToolType.follicle:
@@ -1557,7 +1640,14 @@ class _ToolIconPainter extends CustomPainter {
           ..color = const Color(0xFF03A9F4)
           ..strokeWidth = 2.0
           ..style = PaintingStyle.stroke;
-        canvas.drawOval(Rect.fromCenter(center: center, width: (radius - 1) * 2.2, height: (radius - 1) * 1.6), ring);
+        canvas.drawOval(
+          Rect.fromCenter(
+            center: center,
+            width: (radius - 1) * 2.2,
+            height: (radius - 1) * 1.6,
+          ),
+          ring,
+        );
         break;
 
       case ToolType.spray:
@@ -1586,7 +1676,7 @@ class _ToolIconPainter extends CustomPainter {
           ..color = const Color(0xCCB83B52)
           ..style = PaintingStyle.fill
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2);
-        
+
         final path = Path();
         for (int i = 0; i < 12; i++) {
           final r = (radius - 1) * (0.8 + 0.25 * (i % 2 == 0 ? 1 : -1));
@@ -1607,10 +1697,17 @@ class _ToolIconPainter extends CustomPainter {
         final fill = Paint()
           ..color = const Color(0xFFFF7043)
           ..style = PaintingStyle.fill;
-        
+
         final p = Path();
         p.moveTo(center.dx, 3);
-        p.cubicTo(size.width - 2, 7, size.width - 2, size.height - 3, center.dx, size.height - 3);
+        p.cubicTo(
+          size.width - 2,
+          7,
+          size.width - 2,
+          size.height - 3,
+          center.dx,
+          size.height - 3,
+        );
         p.cubicTo(2, size.height - 3, 2, 7, center.dx, 3);
         canvas.drawPath(p, fill);
         break;
@@ -1620,7 +1717,7 @@ class _ToolIconPainter extends CustomPainter {
         final fillPaint = Paint()
           ..color = const Color(0xFF5C4033)
           ..style = PaintingStyle.fill;
-        
+
         final rectInf = Rect.fromLTWH(2, 4, size.width - 4, size.height - 8);
         canvas.drawOval(rectInf, fillPaint);
 
@@ -1665,9 +1762,13 @@ class _ToolIconPainter extends CustomPainter {
         final fill = Paint()
           ..color = const Color(0xFF5C4033)
           ..style = PaintingStyle.fill;
-        
+
         final p = Path();
-        p.addArc(Rect.fromLTWH(2, 4, size.width - 4, size.height - 6), 0, 3.14159);
+        p.addArc(
+          Rect.fromLTWH(2, 4, size.width - 4, size.height - 6),
+          0,
+          3.14159,
+        );
         p.close();
         canvas.drawPath(p, fill);
         break;
@@ -1685,7 +1786,12 @@ class _ToolIconPainter extends CustomPainter {
           ..color = const Color(0xFF8E24AA).withValues(alpha: 0.65)
           ..style = PaintingStyle.fill;
 
-        _drawGuiShapeForIcon(canvas, Rect.fromLTWH(1, 3, size.width - 2, size.height - 6), fillPaint, strokePaint);
+        _drawGuiShapeForIcon(
+          canvas,
+          Rect.fromLTWH(1, 3, size.width - 2, size.height - 6),
+          fillPaint,
+          strokePaint,
+        );
         break;
 
       case ToolType.arrow:
@@ -1715,7 +1821,13 @@ class _ToolIconPainter extends CustomPainter {
           ..color = Colors.white70
           ..strokeWidth = 1.5
           ..style = PaintingStyle.stroke;
-        canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(3, 3, size.width - 6, size.height - 6), const Radius.circular(4)), paint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(3, 3, size.width - 6, size.height - 6),
+            const Radius.circular(4),
+          ),
+          paint,
+        );
         canvas.drawCircle(const Offset(8, 8), 2.5, paint);
         break;
 
@@ -1727,7 +1839,12 @@ class _ToolIconPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round;
         final path = Path();
         path.moveTo(3, size.height - 5);
-        path.quadraticBezierTo(size.width / 2, 2, size.width - 3, size.height - 3);
+        path.quadraticBezierTo(
+          size.width / 2,
+          2,
+          size.width - 3,
+          size.height - 3,
+        );
         canvas.drawPath(path, paint);
         break;
 
@@ -1736,7 +1853,10 @@ class _ToolIconPainter extends CustomPainter {
           ..color = Colors.white
           ..strokeWidth = 1.8
           ..style = PaintingStyle.stroke;
-        final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(4, 5, 14, 12), const Radius.circular(3));
+        final rrect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(4, 5, 14, 12),
+          const Radius.circular(3),
+        );
         canvas.drawRRect(rrect, paint);
         break;
 
@@ -1747,7 +1867,12 @@ class _ToolIconPainter extends CustomPainter {
     }
   }
 
-  void _drawGuiShapeForIcon(Canvas canvas, Rect bounds, Paint fillPaint, Paint strokePaint) {
+  void _drawGuiShapeForIcon(
+    Canvas canvas,
+    Rect bounds,
+    Paint fillPaint,
+    Paint strokePaint,
+  ) {
     final double left = bounds.left;
     final double right = bounds.right;
     final double top = bounds.top;
@@ -1759,21 +1884,69 @@ class _ToolIconPainter extends CustomPainter {
     path.moveTo(left, top + h * 0.35);
 
     path.cubicTo(
-      left + w * 0.25, top + h * 0.6,
-      left + w * 0.6, top + h * 0.1,
-      right - w * 0.1, top + h * 0.05,
+      left + w * 0.25,
+      top + h * 0.6,
+      left + w * 0.6,
+      top + h * 0.1,
+      right - w * 0.1,
+      top + h * 0.05,
     );
 
     path.quadraticBezierTo(right, top + h * 0.1, right, top + h * 0.3);
-    path.quadraticBezierTo(right - w * 0.05, top + h * 0.6, right - w * 0.12, top + h * 0.62);
-    path.quadraticBezierTo(right - w * 0.2, top + h * 0.45, right - w * 0.25, top + h * 0.4);
-    path.quadraticBezierTo(right - w * 0.22, top + h * 0.85, right - w * 0.32, top + h * 0.88);
-    path.quadraticBezierTo(right - w * 0.42, top + h * 0.6, right - w * 0.48, top + h * 0.5);
-    path.quadraticBezierTo(left + w * 0.45, top + h * 0.98, left + w * 0.35, top + h * 1.0);
-    path.quadraticBezierTo(left + w * 0.28, top + h * 0.65, left + w * 0.25, top + h * 0.5);
-    path.quadraticBezierTo(left + w * 0.18, top + h * 0.75, left + w * 0.12, top + h * 0.72);
-    path.quadraticBezierTo(left + w * 0.08, top + h * 0.5, left + w * 0.05, top + h * 0.42);
-    path.quadraticBezierTo(left + w * 0.02, top + h * 0.38, left, top + h * 0.35);
+    path.quadraticBezierTo(
+      right - w * 0.05,
+      top + h * 0.6,
+      right - w * 0.12,
+      top + h * 0.62,
+    );
+    path.quadraticBezierTo(
+      right - w * 0.2,
+      top + h * 0.45,
+      right - w * 0.25,
+      top + h * 0.4,
+    );
+    path.quadraticBezierTo(
+      right - w * 0.22,
+      top + h * 0.85,
+      right - w * 0.32,
+      top + h * 0.88,
+    );
+    path.quadraticBezierTo(
+      right - w * 0.42,
+      top + h * 0.6,
+      right - w * 0.48,
+      top + h * 0.5,
+    );
+    path.quadraticBezierTo(
+      left + w * 0.45,
+      top + h * 0.98,
+      left + w * 0.35,
+      top + h * 1.0,
+    );
+    path.quadraticBezierTo(
+      left + w * 0.28,
+      top + h * 0.65,
+      left + w * 0.25,
+      top + h * 0.5,
+    );
+    path.quadraticBezierTo(
+      left + w * 0.18,
+      top + h * 0.75,
+      left + w * 0.12,
+      top + h * 0.72,
+    );
+    path.quadraticBezierTo(
+      left + w * 0.08,
+      top + h * 0.5,
+      left + w * 0.05,
+      top + h * 0.42,
+    );
+    path.quadraticBezierTo(
+      left + w * 0.02,
+      top + h * 0.38,
+      left,
+      top + h * 0.35,
+    );
     path.close();
 
     canvas.drawPath(path, fillPaint);
@@ -1782,6 +1955,92 @@ class _ToolIconPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ToolIconPainter oldDelegate) {
-    return oldDelegate.tool != tool || oldDelegate.color != color || oldDelegate.isDashed != isDashed;
+    return oldDelegate.tool != tool ||
+        oldDelegate.color != color ||
+        oldDelegate.isDashed != isDashed;
+  }
+}
+
+/// Всплывающая подсказка (тултип), отображаемая строго справа от целевого элемента.
+/// Мгновенно скрывается при уходе курсора и не перекрывает соседние кнопки.
+class _RightTooltip extends StatefulWidget {
+  final String message;
+  final Widget child;
+
+  const _RightTooltip({
+    required this.message,
+    required this.child,
+  });
+
+  @override
+  State<_RightTooltip> createState() => _RightTooltipState();
+}
+
+class _RightTooltipState extends State<_RightTooltip> {
+  final _overlayController = OverlayPortalController();
+  final _link = LayerLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _link,
+      child: MouseRegion(
+        onEnter: (_) => _overlayController.show(),
+        onExit: (_) => _overlayController.hide(),
+        child: OverlayPortal(
+          controller: _overlayController,
+          overlayChildBuilder: (context) {
+            return Positioned(
+              width: 0,
+              height: 0,
+              child: CompositedTransformFollower(
+                link: _link,
+                targetAnchor: Alignment.centerRight,
+                followerAnchor: Alignment.centerLeft,
+                offset: const Offset(8, 0),
+                child: IgnorePointer(
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    maxWidth: 320,
+                    maxHeight: 120,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xF21C2128),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.white24,
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }

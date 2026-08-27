@@ -286,6 +286,10 @@ void main() {
     test('SetEraserTargetEvent should update eraserTarget in state', () async {
       expect(drawBloc.state.eraserTarget, EraserTarget.annotationsOnly);
 
+      drawBloc.add(SetEraserTargetEvent(EraserTarget.backgroundOnly));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.eraserTarget, EraserTarget.backgroundOnly);
+
       drawBloc.add(SetEraserTargetEvent(EraserTarget.everything));
       await drawBloc.stream.first;
       expect(drawBloc.state.eraserTarget, EraserTarget.everything);

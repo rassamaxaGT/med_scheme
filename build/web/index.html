@@ -41,6 +41,14 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    // Предотвращаем системный зум страницы браузера при Ctrl+Wheel / Cmd+Wheel
+    window.addEventListener('wheel', function (e) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

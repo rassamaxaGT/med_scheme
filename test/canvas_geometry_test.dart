@@ -1,5 +1,7 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:med_scheme/features/editor/domain/entities/draw_action.dart';
 import 'package:med_scheme/features/editor/presentation/widgets/canvas/canvas_painter.dart';
 
 void main() {
@@ -143,6 +145,32 @@ void main() {
       );
       expect(rect2.left, 0.0);
       expect(rect2.top, greaterThanOrEqualTo(1280.0)); // Row 1 starts at 1280.0
+    });
+
+    test('CanvasPainter paints with active EraserStrokeAction in realtime without error', () {
+      final activeNotifier = ValueNotifier<DrawAction?>(
+        EraserStrokeAction(
+          id: 'test_eraser',
+          strokeWidth: 20.0,
+          points: const [Offset(100, 100), Offset(150, 150)],
+          target: EraserTarget.everything,
+          targetSchemePath: 'assets/schemes/standart_endo.jpg',
+        ),
+      );
+
+      final painter = CanvasPainter(
+        history: const [],
+        activeActionNotifier: activeNotifier,
+        backgroundPaths: const ['assets/schemes/standart_endo.jpg'],
+      );
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+
+      expect(() => painter.paint(canvas, const Size(800, 600)), returnsNormally);
+      final picture = recorder.endRecording();
+      picture.dispose();
+      activeNotifier.dispose();
     });
   });
 }

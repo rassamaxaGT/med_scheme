@@ -306,11 +306,22 @@ class CanvasPainter extends CustomPainter {
     final bgPaint = Paint()..color = Colors.white;
     canvas.drawRect(drawRect, bgPaint);
 
-    final hasEverythingEraser = history.any(
-      (a) => a is EraserStrokeAction && a.target == EraserTarget.everything,
-    );
+    final currentActiveAction = activeAction;
+    final bool hasActiveBackgroundEraser =
+        currentActiveAction is EraserStrokeAction &&
+        (currentActiveAction.target == EraserTarget.everything ||
+            currentActiveAction.target == EraserTarget.backgroundOnly);
 
-    if (hasEverythingEraser) {
+    final hasBackgroundEraser =
+        history.any(
+          (a) =>
+              a is EraserStrokeAction &&
+              (a.target == EraserTarget.everything ||
+                  a.target == EraserTarget.backgroundOnly),
+        ) ||
+        hasActiveBackgroundEraser;
+
+    if (hasBackgroundEraser) {
       canvas.saveLayer(drawRect, Paint());
     }
 
@@ -354,7 +365,7 @@ class CanvasPainter extends CustomPainter {
       }
     }
 
-    if (hasEverythingEraser) {
+    if (hasBackgroundEraser) {
       canvas.save();
       canvas.clipRect(drawRect);
       canvas.translate(drawRect.left, drawRect.top);
@@ -381,20 +392,30 @@ class CanvasPainter extends CustomPainter {
 
         for (final action in history) {
           if (action is EraserStrokeAction &&
-              action.target == EraserTarget.everything &&
+              (action.target == EraserTarget.everything ||
+                  action.target == EraserTarget.backgroundOnly) &&
               action.targetSchemePath == path) {
             _drawEraserStroke(canvas, action);
           }
+        }
+        if (hasActiveBackgroundEraser &&
+            currentActiveAction.targetSchemePath == path) {
+          _drawEraserStroke(canvas, currentActiveAction);
         }
         canvas.restore();
       }
 
       for (final action in history) {
         if (action is EraserStrokeAction &&
-            action.target == EraserTarget.everything &&
+            (action.target == EraserTarget.everything ||
+                action.target == EraserTarget.backgroundOnly) &&
             action.targetSchemePath == null) {
           _drawEraserStroke(canvas, action);
         }
+      }
+      if (hasActiveBackgroundEraser &&
+          currentActiveAction.targetSchemePath == null) {
+        _drawEraserStroke(canvas, currentActiveAction);
       }
 
       canvas.restore();
@@ -412,6 +433,7 @@ class CanvasPainter extends CustomPainter {
 
     for (final rawAction in history) {
       if (rawAction.id == selectedActionId) continue;
+      if (rawAction is EraserStrokeAction) continue;
       if (rawAction.targetSchemePath != null &&
           !activePaths.contains(rawAction.targetSchemePath)) {
         continue;
@@ -464,10 +486,12 @@ class CanvasPainter extends CustomPainter {
 
     // 1. Отрисовка активного штриха (тот, что сейчас наносится пальцем/стилусом)
     if (activeAction != null && activeAction!.id != selectedActionId) {
-      if (activeAction!.targetSchemePath == null ||
-          activePaths.contains(activeAction!.targetSchemePath)) {
-        final canvasAction = toCanvasAction(activeAction!, activePaths, bgImages);
-        _drawAction(canvas, canvasAction);
+      if (activeAction is! EraserStrokeAction) {
+        if (activeAction!.targetSchemePath == null ||
+            activePaths.contains(activeAction!.targetSchemePath)) {
+          final canvasAction = toCanvasAction(activeAction!, activePaths, bgImages);
+          _drawAction(canvas, canvasAction);
+        }
       }
     }
 

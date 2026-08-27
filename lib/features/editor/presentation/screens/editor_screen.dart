@@ -865,7 +865,8 @@ class _EditorScreenState extends State<EditorScreen> {
                                   tool == ToolType.follicle ||
                                   tool == ToolType.cyst ||
                                   tool == ToolType.adenomyosis ||
-                                  tool == ToolType.polyp;
+                                  tool == ToolType.polyp ||
+                                  tool == ToolType.bowelInfiltrate;
 
                               final bool showCustomStamps = tool == ToolType.customStamp;
                               final bool showFigo = tool == ToolType.myoma;

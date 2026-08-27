@@ -12,7 +12,11 @@ import 'package:med_scheme/features/editor/presentation/widgets/toolbox/floating
 import 'package:med_scheme/features/editor/presentation/widgets/canvas/canvas_widget.dart';
 import 'package:flutter/material.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:med_scheme/features/editor/presentation/bloc/draw_bloc.dart';
+import 'package:med_scheme/features/editor/presentation/bloc/draw_event.dart';
 import 'package:med_scheme/features/editor/presentation/bloc/draw_state.dart';
+import 'package:med_scheme/features/editor/presentation/screens/editor_screen.dart';
 
 class FakeProjectRepository implements ProjectRepository {
   @override
@@ -166,5 +170,22 @@ void main() {
 
     // Verify no exception was thrown and the toolbox is still visible
     expect(find.byType(FloatingToolbox), findsOneWidget);
+  });
+
+  testWidgets('Selecting bowelInfiltrate displays SettingsBubble with size slider', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MyApp());
+    await tester.pump();
+
+    // Select ToolType.bowelInfiltrate via DrawBloc
+    final BuildContext context = tester.element(find.byType(EditorScreen));
+    context.read<DrawBloc>().add(SelectToolEvent(ToolType.bowelInfiltrate));
+    await tester.pumpAndSettle();
+
+    // Verify SettingsBubble is shown
+    expect(find.byType(SettingsBubble), findsOneWidget);
+    // Verify size slider is present (text starts with "Размер:")
+    expect(find.textContaining('Размер:'), findsOneWidget);
   });
 }

@@ -25,6 +25,11 @@ class MyApp extends StatelessWidget {
           seedColor: const Color(0xFF0F4C81), // Classic Blue
           brightness: Brightness.dark,
         ),
+        tooltipTheme: const TooltipThemeData(
+          waitDuration: Duration(milliseconds: 300),
+          showDuration: Duration.zero,
+          exitDuration: Duration.zero,
+        ),
         useMaterial3: true,
       ),
       home: MultiBlocProvider(

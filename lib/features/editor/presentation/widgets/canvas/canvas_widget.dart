@@ -237,7 +237,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
               }
               if (activeState.currentTool == ToolType.eraser) {
                 _hoverCursorNotifier.value = null;
+                _activeStrokeNotifier.value = null;
                 setState(() {
+                  _activeAction = null;
                   _initialHistoryBeforeErase = [];
                   _hasErasedAnything = false;
                   _currentPoints = [];
@@ -263,7 +265,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                     activeState.currentTool == ToolType.iud ||
                     activeState.currentTool == ToolType.follicle ||
                     activeState.currentTool == ToolType.polyp ||
-                    activeState.currentTool == ToolType.foci;
+                    activeState.currentTool == ToolType.foci ||
+                    activeState.currentTool == ToolType.bowelInfiltrate;
                 if (needsHover) {
                   _hoverCursorNotifier.value = event.localPosition;
                 } else {
@@ -294,10 +297,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                           painter: CanvasPainter(
                             history: state.history,
                             // Используем notifier — painter сам перерисовывается без setState
-                            activeActionNotifier:
-                                state.currentTool != ToolType.eraser
-                                ? _activeStrokeNotifier
-                                : null,
+                            activeActionNotifier: _activeStrokeNotifier,
                             backgroundImage:
                                 widget.backgroundImage ??
                                 _loadedBackgroundImage,
@@ -329,7 +329,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                             state.currentTool == ToolType.iud ||
                             state.currentTool == ToolType.follicle ||
                             state.currentTool == ToolType.polyp ||
-                            state.currentTool == ToolType.foci;
+                            state.currentTool == ToolType.foci ||
+                            state.currentTool == ToolType.bowelInfiltrate;
 
                         if (isGhostTool) {
                           return _buildGhostCursor(state, hoverPos);
@@ -925,6 +926,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     double eraserWidth,
     EraserTarget target,
   ) {
+    if (target == EraserTarget.backgroundOnly) {
+      return;
+    }
+
     final now = DateTime.now();
     if (_lastEraseTime != null &&
         now.difference(_lastEraseTime!).inMilliseconds < 16) {
@@ -1227,11 +1232,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
     if (state.currentTool == ToolType.eraser) {
       _hoverCursorNotifier.value = event.localPosition;
+      final erasePoint = targetPath != null ? localPosition : rawCanvasPt;
       setState(() {
         _initialHistoryBeforeErase = List<DrawAction>.from(state.history);
         _hasErasedAnything = false;
-        _currentPoints = [rawCanvasPt];
-        if (state.eraserTarget == EraserTarget.everything) {
+        _currentPoints = [erasePoint];
+        if (state.eraserTarget == EraserTarget.everything ||
+            state.eraserTarget == EraserTarget.backgroundOnly) {
           _activeAction = EraserStrokeAction(
             id: id,
             strokeWidth: state.currentStrokeWidth,
@@ -1243,6 +1250,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           _activeAction = null;
         }
       });
+      _activeStrokeNotifier.value = _activeAction;
       _applyLocalEraserStroke(
         [rawCanvasPt],
         state.currentStrokeWidth,
@@ -1385,7 +1393,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (state.currentTool == ToolType.eraser) {
       // Обновляем курсор через notifier — нет setState
       _hoverCursorNotifier.value = event.localPosition;
-      _currentPoints.add(rawCanvasPt);
+      final erasePoint = _activeAction?.targetSchemePath != null
+          ? localPosition
+          : rawCanvasPt;
+      _currentPoints.add(erasePoint);
       if (_activeAction is EraserStrokeAction) {
         final updated = EraserStrokeAction(
           id: _activeAction!.id,
@@ -1891,12 +1902,20 @@ class _CanvasWidgetState extends State<CanvasWidget> {
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
 
-    final bool isCtrl = HardwareKeyboard.instance.isControlPressed;
-    final bool isShift = HardwareKeyboard.instance.isShiftPressed;
+    final bool isCtrl = HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight) ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.metaLeft) ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.metaRight);
+    final bool isShift = HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftLeft) ||
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.shiftRight);
 
     setState(() {
       if (isCtrl) {
-        // Зум в точку под курсором (аналог pinch-to-zoom для мыши)
+        if (event.scrollDelta.dy == 0) return;
+        // Зум в точку под курсором (аналог pinch-to-zoom для мыши / Ctrl+Wheel в веб и десктоп)
         final double zoomFactor = event.scrollDelta.dy > 0 ? 0.9 : 1.1;
         final double newScale = (_scale * zoomFactor).clamp(0.1, 10.0);
         final focalPoint = event.localPosition;
@@ -2009,7 +2028,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     );
     // Точный радиус в экранных пикселях 1-в-1 с областью стирания на схеме
     final double radius = (state.currentStrokeWidth / 2) * effectiveScale;
-    final isEverything = state.eraserTarget == EraserTarget.everything;
+    final bool isErasingBackground =
+        state.eraserTarget == EraserTarget.everything ||
+        state.eraserTarget == EraserTarget.backgroundOnly;
+
+    final Color cursorColor = switch (state.eraserTarget) {
+      EraserTarget.annotationsOnly => const Color(0xFF0F4C81),
+      EraserTarget.backgroundOnly => const Color(0xFF00897B),
+      EraserTarget.everything => Colors.orangeAccent,
+    };
 
     return Positioned(
       left: center.dx - radius,
@@ -2020,13 +2047,11 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           height: radius * 2,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isEverything
-                ? Colors.orangeAccent.withValues(alpha: 0.08)
+            color: isErasingBackground
+                ? cursorColor.withValues(alpha: 0.08)
                 : Colors.transparent,
             border: Border.all(
-              color: isEverything
-                  ? Colors.orangeAccent
-                  : const Color(0xFF0F4C81),
+              color: cursorColor,
               width: 1.5,
             ),
           ),
@@ -2049,6 +2074,11 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       state.backgroundPaths,
     );
 
+    final ui.Image? stampImage = state.currentTool == ToolType.bowelInfiltrate
+        ? (_stampImagesNonNull['assets/images/infiltrat.png'] ??
+            _stampImages['assets/images/infiltrat.png'])
+        : null;
+
     return Positioned(
       left: position.dx,
       top: position.dy,
@@ -2059,6 +2089,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             color: state.currentColor,
             strokeWidth: state.currentStrokeWidth,
             effectiveScale: effectiveScale,
+            stampImage: stampImage,
           ),
         ),
       ),
@@ -2071,12 +2102,14 @@ class _GhostStampPainter extends CustomPainter {
   final Color color;
   final double strokeWidth;
   final double effectiveScale;
+  final ui.Image? stampImage;
 
   _GhostStampPainter({
     required this.tool,
     required this.color,
     required this.strokeWidth,
     required this.effectiveScale,
+    this.stampImage,
   });
 
   @override
@@ -2241,6 +2274,63 @@ class _GhostStampPainter extends CustomPainter {
         );
         break;
 
+      case ToolType.bowelInfiltrate:
+        // Штамп инфильтрата кишки
+        final double scale = strokeWidth / 5.0;
+        final double height = 90.0 * scale;
+        final double width = height *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : 2.0);
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: width,
+          height: height,
+        );
+
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rect.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rect,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          // Если картинка еще загружается - рисуем силуэт
+          final ghostPaint = Paint()
+            ..color = const Color(0xFF5C4033).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawOval(rect, ghostPaint);
+        }
+
+        // Тонкий контур границы
+        final borderPaint = Paint()
+          ..color = const Color(0xFF5C4033).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawOval(rect, borderPaint);
+
+        // Точка прицела в центре
+        final dotPaint = Paint()
+          ..color = Colors.white.withValues(alpha: 0.9)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset.zero,
+          1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
+          dotPaint,
+        );
+        break;
+
       default:
         break;
     }
@@ -2253,6 +2343,7 @@ class _GhostStampPainter extends CustomPainter {
     return oldDelegate.tool != tool ||
         oldDelegate.color != color ||
         oldDelegate.strokeWidth != strokeWidth ||
-        oldDelegate.effectiveScale != effectiveScale;
+        oldDelegate.effectiveScale != effectiveScale ||
+        oldDelegate.stampImage != stampImage;
   }
 }
