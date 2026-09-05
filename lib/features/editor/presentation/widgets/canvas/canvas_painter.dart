@@ -101,13 +101,25 @@ class CanvasPainter extends CustomPainter {
     return effectiveWidth / 5.0;
   }
 
+  /// Масштаб штампа миоматозного узла по шкале 1..6:
+  /// значение 3 соответствует прежнему размеру 6 (scale factor 1.75, высота 63 px)
+  static double getMyomaStampScale(double strokeWidth) {
+    return getBowelInfiltrateScale(strokeWidth) * 1.75;
+  }
+
+  /// Масштаб второго штампа инфильтрата кишки по шкале 1..6:
+  /// значение 3 соответствует прежнему размеру ~3.5 (scale factor 1.125, высота 40.5 px)
+  static double getInfiltrateStamp2Scale(double strokeWidth) {
+    return getBowelInfiltrateScale(strokeWidth) * 1.125;
+  }
+
   /// Масштаб ВМС (условный знак и штамп Мирена) по шкале 1..6:
-  /// значение 3 соответствует размеру ~20 px (scale 2.5, высота 90 px)
+  /// базовый размер увеличен в 2.5 раза
   static double getIudScale(double strokeWidth) {
     if (strokeWidth <= 6.0) {
-      return strokeWidth * (20.0 / 24.0);
+      return strokeWidth * (20.0 / 24.0) * 2.5;
     }
-    return strokeWidth / 8.0;
+    return (strokeWidth / 8.0) * 2.5;
   }
 
   static double getSchemeScaleFactor(
@@ -712,13 +724,13 @@ class CanvasPainter extends CustomPainter {
         w = width;
         h = height;
       } else if (action.stampType == 'infiltrateStamp2' || action.customStampPath == 'assets/images/infiltrat2.png') {
-        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final double scale = getInfiltrateStamp2Scale(action.strokeWidth);
         final double height = 90.0 * scale;
         final double width = height * (1024.0 / 1024.0);
         w = width;
         h = height;
       } else if (action.stampType == 'myomaStamp' || action.customStampPath == 'assets/images/myoma.png') {
-        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final double scale = getMyomaStampScale(action.strokeWidth);
         final double height = 90.0 * scale;
         final double width = height * (1301.0 / 1209.0);
         w = width;
@@ -1829,7 +1841,7 @@ class CanvasPainter extends CustomPainter {
 
       final paint = Paint()
         ..color = stamp.color
-        ..strokeWidth = (3.0 * scale).clamp(1.5 * schemeScaleFactor, 6.0 * schemeScaleFactor)
+        ..strokeWidth = (1.5 * scale).clamp(2.0 * schemeScaleFactor, 8.0 * schemeScaleFactor)
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round;
 
@@ -1934,7 +1946,7 @@ class CanvasPainter extends CustomPainter {
     } else if (stamp.stampType == 'infiltrateStamp2' || stamp.customStampPath == 'assets/images/infiltrat2.png') {
       final image = stampImages[stamp.customStampPath ?? 'assets/images/infiltrat2.png'] ?? stampImages['assets/images/infiltrat2.png'];
       if (image != null) {
-        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double scale = getInfiltrateStamp2Scale(stamp.strokeWidth) * schemeScaleFactor;
         final double height = 90.0 * scale;
         final double width = height * (image.width / image.height);
         final rect = Rect.fromCenter(
@@ -1952,7 +1964,7 @@ class CanvasPainter extends CustomPainter {
     } else if (stamp.stampType == 'myomaStamp' || stamp.customStampPath == 'assets/images/myoma.png') {
       final image = stampImages[stamp.customStampPath ?? 'assets/images/myoma.png'] ?? stampImages['assets/images/myoma.png'];
       if (image != null) {
-        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double scale = getMyomaStampScale(stamp.strokeWidth) * schemeScaleFactor;
         final double height = 90.0 * scale;
         final double width = height * (image.width / image.height);
         final rect = Rect.fromCenter(

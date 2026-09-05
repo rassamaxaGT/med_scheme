@@ -1124,27 +1124,28 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     if (state.currentTool == ToolType.move) {
       // 1. Сначала проверяем, попал ли клик на угловой маркер уже выбранного объекта
       if (_selectedActionId != null) {
-        DrawAction? selectedAction;
+        DrawAction? foundAction;
         try {
-          selectedAction = state.history.firstWhere(
+          foundAction = state.history.firstWhere(
             (a) => a.id == _selectedActionId,
           );
         } catch (_) {}
 
-        if (selectedAction != null) {
+        if (foundAction != null) {
+          final selectedAction = foundAction;
           final selectionBounds =
               CanvasPainter.getActionSelectionBounds(selectedAction);
-          const double cornerThreshold = 32.0; // экранные пиксели для углов
-          const double rotationHitThreshold =
-              48.0; // увеличенная область захвата вращения (экранные пиксели)
+          final localObjPos = _canvasToObjectSpace(rawCanvasPt, selectedAction);
+          final double avgScale = ((selectedAction.scaleX.abs() + selectedAction.scaleY.abs()) / 2)
+              .clamp(0.1, 10.0);
 
-          final scaleY = selectedAction.scaleY.abs() == 0
-              ? 1.0
-              : selectedAction.scaleY.abs();
+          // 1.1. Область захвата вращения: строго в размерах иконки вращения
           final rotationLocalPt = Offset(
             selectionBounds.center.dx,
-            selectionBounds.top - (36.0 / scaleY),
+            selectionBounds.top - (36.0 / avgScale),
           );
+          final double rotRadius = 14.0 / avgScale;
+
           final rotationCanvasPt = _schemeToCanvasSpace(
             CanvasPainter.getTransformedActionPoint(
               selectedAction,
@@ -1154,23 +1155,68 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           );
           final rotationScreenPt = _canvasToScreen(rotationCanvasPt);
 
+          final rotEdgeCanvasPt = _schemeToCanvasSpace(
+            CanvasPainter.getTransformedActionPoint(
+              selectedAction,
+              rotationLocalPt + Offset(rotRadius, 0),
+            ),
+            selectedAction.targetSchemePath,
+          );
+          final rotEdgeScreenPt = _canvasToScreen(rotEdgeCanvasPt);
+          final double screenRotRadius = (rotEdgeScreenPt - rotationScreenPt).distance;
+
           String? hitHandle;
 
-          if ((event.localPosition - rotationScreenPt).distance <
-              rotationHitThreshold) {
+          // Захват вращения исключительно в пределах визуальной иконки вращения (с допуском 1.5 px на сглаживание)
+          if ((event.localPosition - rotationScreenPt).distance <= screenRotRadius + 1.5) {
             hitHandle = 'rotation';
           } else {
+            // Область захвата изменения размера: исключительно через углы (не захватывая грани и тело координатного квадрата)
+            const double cornerThreshold = 32.0;
+            final double handleSize = 10.0 / avgScale;
+
+            // Допустимое проникновение угла вдоль сторон внутрь рамки (не больше четверти стороны рамки и не дальше визуального маркера)
+            final double maxInwardX = math.min(handleSize * 1.5, selectionBounds.width * 0.25);
+            final double maxInwardY = math.min(handleSize * 1.5, selectionBounds.height * 0.25);
+
             final cornersLocal = <String, Offset>{
               'topLeft': selectionBounds.topLeft,
               'topRight': selectionBounds.topRight,
               'bottomLeft': selectionBounds.bottomLeft,
               'bottomRight': selectionBounds.bottomRight,
             };
+
             for (final entry in cornersLocal.entries) {
+              final cornerPt = entry.value;
+
+              // Проверяем проникновение вдоль осей внутрь координатного квадрата:
+              // Если клик глубоко на грани или внутри квадрата, это НЕ угол (это грань/тело для перемещения)
+              final double inwardX;
+              final double inwardY;
+              switch (entry.key) {
+                case 'topLeft':
+                  inwardX = localObjPos.dx - cornerPt.dx;
+                  inwardY = localObjPos.dy - cornerPt.dy;
+                case 'topRight':
+                  inwardX = cornerPt.dx - localObjPos.dx;
+                  inwardY = localObjPos.dy - cornerPt.dy;
+                case 'bottomLeft':
+                  inwardX = localObjPos.dx - cornerPt.dx;
+                  inwardY = cornerPt.dy - localObjPos.dy;
+                default: // bottomRight
+                  inwardX = cornerPt.dx - localObjPos.dx;
+                  inwardY = cornerPt.dy - localObjPos.dy;
+              }
+
+              // Если клик уходит дальше допустимой угловой зоны внутрь или вдоль граней — отсекаем
+              if (inwardX > maxInwardX || inwardY > maxInwardY) {
+                continue;
+              }
+
               final canvasPt = _schemeToCanvasSpace(
                 CanvasPainter.getTransformedActionPoint(
                   selectedAction,
-                  entry.value,
+                  cornerPt,
                 ),
                 selectedAction.targetSchemePath,
               );
@@ -1185,7 +1231,10 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           if (hitHandle != null) {
             setState(() {
               _draggedHandle = hitHandle;
-              _dragStartPoint = localPosition;
+              _dragStartPoint = _getSchemeLocalPosition(
+                rawCanvasPt,
+                selectedAction.targetSchemePath,
+              );
               _originalActionForDrag = selectedAction;
               _activeAction = selectedAction;
             });
@@ -1228,6 +1277,24 @@ class _CanvasWidgetState extends State<CanvasWidget> {
             }
             return;
           }
+
+          // 1.3. Перетаскивание за любой участок внутри координатного квадрата и его границы
+          final double borderTolerance = 8.0 / avgScale;
+          if (selectionBounds.inflate(borderTolerance).contains(localObjPos)) {
+            setState(() {
+              _draggedHandle = null;
+              _rotatedDraggedCorner = null;
+              _rotatedAnchorCorner = null;
+              _anchorCanvas = null;
+              _dragStartPoint = _getSchemeLocalPosition(
+                rawCanvasPt,
+                selectedAction.targetSchemePath,
+              );
+              _originalActionForDrag = selectedAction;
+              _activeAction = selectedAction;
+            });
+            return;
+          }
         }
       }
 
@@ -1240,13 +1307,22 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           continue; // Игнорируем действия от выключенных схем
         }
         final localObjPos = _canvasToObjectSpace(rawCanvasPt, action);
+        final selectionBounds = CanvasPainter.getActionSelectionBounds(action);
+        final isInsideBox = selectionBounds.contains(localObjPos);
+
         final dist = _getDistanceToAction(localObjPos, action);
         final double avgScale = (action.scaleX.abs() + action.scaleY.abs()) / 2;
         final screenDist = dist * avgScale;
         final threshold = 20.0 + (action.strokeWidth / 2);
-        if (screenDist < threshold && screenDist < minHitDistance) {
-          hitAction = action;
-          minHitDistance = screenDist;
+        if (isInsideBox || screenDist < threshold) {
+          final effectiveDist = isInsideBox ? 0.0 : screenDist;
+          if (effectiveDist < minHitDistance) {
+            hitAction = action;
+            minHitDistance = effectiveDist;
+            if (isInsideBox) {
+              break;
+            }
+          }
         }
       }
 
@@ -2213,7 +2289,7 @@ class _GhostStampPainter extends CustomPainter {
 
         final ghostPaint = Paint()
           ..color = color.withValues(alpha: 0.55)
-          ..strokeWidth = (3.0 * scale).clamp(1.5, 6.0)
+          ..strokeWidth = (1.5 * scale).clamp(2.0, 8.0)
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round;
 
@@ -2474,7 +2550,7 @@ class _GhostStampPainter extends CustomPainter {
 
       case ToolType.infiltrateStamp2:
         // Штамп инфильтрата 2
-        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double scale = CanvasPainter.getInfiltrateStamp2Scale(strokeWidth);
         final double height = 90.0 * scale;
         final double width = height *
             (stampImage != null
@@ -2528,7 +2604,7 @@ class _GhostStampPainter extends CustomPainter {
 
       case ToolType.myomaStamp:
         // Штамп миоматозного узла
-        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double scale = CanvasPainter.getMyomaStampScale(strokeWidth);
         final double height = 90.0 * scale;
         final double width = height *
             (stampImage != null

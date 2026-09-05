@@ -25,6 +25,46 @@ void main() {
       expect(CanvasPainter.getBowelInfiltrateScale(6.0), closeTo(0.7, 0.0001));
     });
 
+    test('getMyomaStampScale maps levels 1..6 with level 3 matching legacy size 6', () {
+      // Size 3 must correspond to previous size 6 (scale 0.7, height = 63.0 px)
+      expect(CanvasPainter.getMyomaStampScale(3.0), closeTo(CanvasPainter.getBowelInfiltrateScale(6.0), 0.0001));
+      expect(CanvasPainter.getMyomaStampScale(3.0), closeTo(0.7, 0.0001));
+      expect(90.0 * CanvasPainter.getMyomaStampScale(3.0), closeTo(63.0, 0.0001));
+
+      // Level 1 -> 0.35 (height = 31.5 px)
+      expect(CanvasPainter.getMyomaStampScale(1.0), closeTo(0.35, 0.0001));
+
+      // Level 6 -> 1.225 (height = 110.25 px)
+      expect(CanvasPainter.getMyomaStampScale(6.0), closeTo(1.225, 0.0001));
+    });
+
+    test('getInfiltrateStamp2Scale maps levels 1..6 with level 3 matching legacy size 3.5', () {
+      // Size 3 must correspond to previous size 3.5 (scale 0.45, height = 40.5 px)
+      expect(CanvasPainter.getInfiltrateStamp2Scale(3.0), closeTo(CanvasPainter.getBowelInfiltrateScale(3.5), 0.0001));
+      expect(CanvasPainter.getInfiltrateStamp2Scale(3.0), closeTo(0.45, 0.0001));
+      expect(90.0 * CanvasPainter.getInfiltrateStamp2Scale(3.0), closeTo(40.5, 0.0001));
+
+      // Level 1 -> 0.225 (height = 20.25 px)
+      expect(CanvasPainter.getInfiltrateStamp2Scale(1.0), closeTo(0.225, 0.0001));
+
+      // Level 6 -> 0.7875 (height = 70.875 px)
+      expect(CanvasPainter.getInfiltrateStamp2Scale(6.0), closeTo(0.7875, 0.0001));
+    });
+
+    test('getIudScale maps levels 1..6 with 2.5x enlarged base dimensions', () {
+      // Level 3 -> 3.0 * (20/24) * 2.5 = 6.25 (height = 225 px)
+      expect(CanvasPainter.getIudScale(3.0), closeTo(6.25, 0.0001));
+      expect(36.0 * CanvasPainter.getIudScale(3.0), closeTo(225.0, 0.0001));
+
+      // Level 1 -> 1.0 * (20/24) * 2.5 = 2.0833 (height = 75 px)
+      expect(CanvasPainter.getIudScale(1.0), closeTo(25.0 / 12.0, 0.0001));
+      expect(36.0 * CanvasPainter.getIudScale(1.0), closeTo(75.0, 0.0001));
+
+      // Level 6 -> 6.0 * (20/24) * 2.5 = 12.5 (height = 450 px)
+      expect(CanvasPainter.getIudScale(6.0), closeTo(12.5, 0.0001));
+      expect(36.0 * CanvasPainter.getIudScale(6.0), closeTo(450.0, 0.0001));
+    });
+
     test('getCanvasBaseSize returns standard size for empty paths (blank sheet)', () {
       final size = CanvasPainter.getCanvasBaseSize(const []);
       expect(size.width, 907.0);
