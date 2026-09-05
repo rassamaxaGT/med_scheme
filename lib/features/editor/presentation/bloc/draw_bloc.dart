@@ -255,9 +255,13 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       try {
         final service = _customStampsService ?? await CustomStampsService.create();
         _customStampsService = service;
+        final targetGroup = event.groupId.trim();
+        if (targetGroup.isNotEmpty && !_isSystemGroupId(targetGroup)) {
+          await service.addCustomGroup(targetGroup);
+        }
         final savedItem = await service.addCustomStamp(
           name: event.name,
-          groupId: event.groupId,
+          groupId: targetGroup,
           sourceFilePath: event.sourceFilePath,
           bytes: event.bytes,
         );
@@ -327,6 +331,18 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         emit(state.copyWith(customGroups: updatedGroups));
       } catch (e) {
         debugPrint('DrawBloc: Error creating custom group: $e');
+      }
+    });
+
+    on<DeleteCustomGroupEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        await service.deleteCustomGroup(event.groupName);
+        final updatedGroups = await service.loadCustomGroups();
+        emit(state.copyWith(customGroups: updatedGroups));
+      } catch (e) {
+        debugPrint('DrawBloc: Error deleting custom group: $e');
       }
     });
 
@@ -565,5 +581,28 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       default:
         return null;
     }
+  }
+
+  static bool _isSystemGroupId(String id) {
+    const systemIds = {
+      'select',
+      'undo_redo',
+      'legend',
+      'bowelInfiltrate',
+      'myoma',
+      'iud',
+      'foci',
+      'follicle',
+      'cyst',
+      'adenomyosis',
+      'polyp',
+      'custom_stamps',
+      'arrow_distance',
+      'arrow_pointer',
+      'pencil',
+      'spray',
+      'eraser',
+    };
+    return systemIds.contains(id);
   }
 }

@@ -1507,8 +1507,12 @@ class _EditorScreenState extends State<EditorScreen> {
       };
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('autosave_draft', jsonEncode(draftMap));
-      debugPrint('Автосохранение черновика успешно выполнено.');
+      try {
+        await prefs.setString('autosave_draft', jsonEncode(draftMap));
+        debugPrint('Автосохранение черновика успешно выполнено.');
+      } catch (saveError) {
+        debugPrint('Автосохранение черновика пропущено из-за лимита хранилища: $saveError');
+      }
     } catch (e) {
       debugPrint('Ошибка автосохранения: $e');
     }

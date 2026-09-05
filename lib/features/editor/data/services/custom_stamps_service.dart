@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -57,6 +58,36 @@ class CustomStampItem {
             : 'custom_stamps',
         createdAt: json['createdAt'] as int?,
       );
+}
+
+/// Оптимизирует байты PNG-штампа для максимального быстродействия и предотвращения переполнения квоты localStorage (5MB).
+/// Уменьшает разрешение до 384x384 с сохранением прозрачности и применяет оптимальное PNG-сжатие.
+Uint8List optimizeStampBytes(Uint8List rawBytes, {int maxDimension = 384}) {
+  try {
+    final decoded = img.decodeImage(rawBytes);
+    if (decoded == null) return rawBytes;
+
+    if (decoded.width <= maxDimension && decoded.height <= maxDimension) {
+      if (rawBytes.length < 80 * 1024) {
+        return rawBytes;
+      }
+    }
+
+    img.Image resized = decoded;
+    if (decoded.width > maxDimension || decoded.height > maxDimension) {
+      if (decoded.width >= decoded.height) {
+        resized = img.copyResize(decoded, width: maxDimension);
+      } else {
+        resized = img.copyResize(decoded, height: maxDimension);
+      }
+    }
+
+    final compressedBytes = Uint8List.fromList(img.encodePng(resized, level: 6));
+    return compressedBytes;
+  } catch (e) {
+    debugPrint('CustomStampsService: error optimizing stamp bytes: $e');
+    return rawBytes;
+  }
 }
 
 /// Сервис автономного хранения пользовательских PNG-штампов в локальной директории приложения (Native)
@@ -234,10 +265,24 @@ class CustomStampsService {
       try {
         final List<dynamic> list = jsonDecode(rawJson);
         final items = <CustomStampItem>[];
+        bool needsResave = false;
         for (final item in list) {
           final stamp = CustomStampItem.fromJson(Map<String, dynamic>.from(item));
           if (kIsWeb || stamp.imagePath.startsWith('data:image')) {
-            items.add(stamp);
+            // Если в хранилище лежит старый гигантский base64 (>80KB), сжимаем его на лету!
+            if (stamp.imagePath.startsWith('data:image') && stamp.imagePath.length > 80000) {
+              try {
+                final comma = stamp.imagePath.indexOf(',');
+                final data = comma != -1 ? stamp.imagePath.substring(comma + 1) : stamp.imagePath;
+                final opt = optimizeStampBytes(base64Decode(data));
+                items.add(stamp.copyWith(imagePath: 'data:image/png;base64,${base64Encode(opt)}'));
+                needsResave = true;
+              } catch (_) {
+                items.add(stamp);
+              }
+            } else {
+              items.add(stamp);
+            }
           } else {
             try {
               if (await File(stamp.imagePath).exists()) {
@@ -247,6 +292,18 @@ class CustomStampsService {
               items.add(stamp);
             }
           }
+        }
+        final groups = await loadCustomGroups();
+        for (int idx = 0; idx < items.length; idx++) {
+          final s = items[idx];
+          if (s.groupId.startsWith('custom_group_')) {
+            final newG = groups.isNotEmpty ? groups.last : 'custom_stamps';
+            items[idx] = s.copyWith(groupId: newG);
+            needsResave = true;
+          }
+        }
+        if (needsResave) {
+          await _saveCustomStampsList(items);
         }
         return items;
       } catch (e) {
@@ -275,8 +332,38 @@ class CustomStampsService {
   }
 
   Future<void> _saveCustomStampsList(List<CustomStampItem> items) async {
-    final raw = jsonEncode(items.map((e) => e.toJson()).toList());
-    await _prefs.setString(_keyItems, raw);
+    try {
+      final raw = jsonEncode(items.map((e) => e.toJson()).toList());
+      await _prefs.setString(_keyItems, raw);
+    } catch (e) {
+      debugPrint('CustomStampsService: error saving stamps list ($e). Attempting cleanup...');
+      // Очищаем старые раздутые слоты и черновик, чтобы освободить место
+      for (int i = 0; i < slotCount; i++) {
+        await _prefs.remove('$_keySlotPrefix$i');
+      }
+      await _prefs.remove('autosave_draft');
+
+      // Сжимаем все элементы в списке, если они еще не сжаты
+      for (int i = 0; i < items.length; i++) {
+        final it = items[i];
+        if (it.imagePath.startsWith('data:image') && it.imagePath.length > 80000) {
+          try {
+            final comma = it.imagePath.indexOf(',');
+            final data = comma != -1 ? it.imagePath.substring(comma + 1) : it.imagePath;
+            final opt = optimizeStampBytes(base64Decode(data));
+            items[i] = it.copyWith(imagePath: 'data:image/png;base64,${base64Encode(opt)}');
+          } catch (_) {}
+        }
+      }
+
+      try {
+        final rawRetry = jsonEncode(items.map((e) => e.toJson()).toList());
+        await _prefs.setString(_keyItems, rawRetry);
+        debugPrint('CustomStampsService: successfully saved after compression.');
+      } catch (retryError) {
+        debugPrint('CustomStampsService: retry save failed: $retryError');
+      }
+    }
   }
 
   Future<CustomStampItem?> addCustomStamp({
@@ -289,18 +376,45 @@ class CustomStampsService {
     final stampId = 'stamp_${timestamp}_${math.Random().nextInt(10000)}';
     String? savedPath;
 
-    if (sourceFilePath != null && sourceFilePath.startsWith('data:image')) {
-      savedPath = sourceFilePath;
-    } else if (kIsWeb) {
-      if (bytes != null) {
+    // Оптимизируем байты перед сохранением для максимального быстродействия
+    Uint8List? optimizedBytes;
+    if (bytes != null && bytes.isNotEmpty) {
+      optimizedBytes = optimizeStampBytes(bytes);
+    } else if (sourceFilePath != null && sourceFilePath.startsWith('data:image')) {
+      try {
+        final comma = sourceFilePath.indexOf(',');
+        final data = comma != -1 ? sourceFilePath.substring(comma + 1) : sourceFilePath;
+        final raw = base64Decode(data);
+        optimizedBytes = optimizeStampBytes(raw);
+      } catch (_) {}
+    } else if (sourceFilePath != null && !kIsWeb) {
+      try {
+        final f = File(sourceFilePath);
+        if (await f.exists()) {
+          final raw = await f.readAsBytes();
+          optimizedBytes = optimizeStampBytes(raw);
+        }
+      } catch (_) {}
+    }
+
+    if (kIsWeb) {
+      if (optimizedBytes != null) {
+        savedPath = 'data:image/png;base64,${base64Encode(optimizedBytes)}';
+      } else if (bytes != null) {
         savedPath = 'data:image/png;base64,${base64Encode(bytes)}';
+      } else if (sourceFilePath != null && sourceFilePath.startsWith('data:image')) {
+        savedPath = sourceFilePath;
       }
     } else {
       await _ensureDirectory();
       final dir = await _getStorageDirectory();
       final destPath = '${dir.path}/custom_stamp_$timestamp.png';
       try {
-        if (bytes != null) {
+        if (optimizedBytes != null) {
+          final destFile = File(destPath);
+          await destFile.writeAsBytes(optimizedBytes);
+          savedPath = destPath;
+        } else if (bytes != null) {
           final destFile = File(destPath);
           await destFile.writeAsBytes(bytes);
           savedPath = destPath;
@@ -330,14 +444,6 @@ class CustomStampsService {
     final currentList = await loadCustomStamps();
     currentList.add(newStamp);
     await _saveCustomStampsList(currentList);
-
-    // Если есть свободный legacy-слот или для синхронизации, сохраняем в первый попавшийся слот
-    try {
-      final legacySlots = await loadSlots();
-      int freeIdx = legacySlots.indexOf(null);
-      if (freeIdx == -1) freeIdx = 0;
-      await saveStampToSlot(freeIdx, bytes: bytes, sourceFilePath: sourceFilePath);
-    } catch (_) {}
 
     return newStamp;
   }

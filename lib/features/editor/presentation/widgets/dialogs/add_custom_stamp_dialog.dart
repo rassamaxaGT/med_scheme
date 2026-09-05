@@ -154,10 +154,9 @@ class _AddCustomStampDialogState extends State<AddCustomStampDialog> {
         );
         return;
       }
-      final newGroupId = 'custom_group_${DateTime.now().millisecondsSinceEpoch}';
       Navigator.of(context).pop(AddCustomStampResult(
         name: stampName,
-        groupId: newGroupId,
+        groupId: newGroupName,
         groupName: newGroupName,
         isNewGroup: true,
       ));

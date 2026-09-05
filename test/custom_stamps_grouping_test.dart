@@ -233,5 +233,74 @@ void main() {
 
       drawBloc.close();
     });
+
+    testWidgets('Custom group is displayed when created (empty, 1 item, multiple items)', (tester) async {
+      final drawBloc = DrawBloc();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BlocProvider.value(
+              value: drawBloc,
+              child: FloatingToolbox(
+                currentTool: ToolType.pencil,
+                orientation: ToolboxOrientation.verticalLeft,
+                onToolSelected: (_) {},
+                onDragUpdate: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      // 1. Create a custom group 'Лимфоузлы' with no stamps yet
+      drawBloc.emit(drawBloc.state.copyWith(
+        customGroups: ['Лимфоузлы'],
+        customStampItems: [],
+      ));
+      await tester.pumpAndSettle();
+
+      // The group must be displayed! (Formatted vertically as 'Лимфоу.')
+      expect(find.text('Лимфоу.', skipOffstage: false), findsOneWidget);
+
+      // 2. Add 1 stamp into 'Лимфоузлы'
+      final stamp1 = CustomStampItem(
+        id: 'stamp_lymph_1',
+        name: 'Узел 1',
+        groupId: 'Лимфоузлы',
+        imagePath: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+
+      drawBloc.emit(drawBloc.state.copyWith(
+        customGroups: ['Лимфоузлы'],
+        customStampItems: [stamp1],
+      ));
+      await tester.pump();
+
+      // Still standalone, displayed with group label
+      expect(find.text('Лимфоу.', skipOffstage: false), findsOneWidget);
+
+      // 3. Add 2nd stamp into 'Лимфоузлы'
+      final stamp2 = CustomStampItem(
+        id: 'stamp_lymph_2',
+        name: 'Узел 2',
+        groupId: 'Лимфоузлы',
+        imagePath: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+
+      drawBloc.emit(drawBloc.state.copyWith(
+        customGroups: ['Лимфоузлы'],
+        customStampItems: [stamp1, stamp2],
+      ));
+      await tester.pump();
+
+      // Multi-item custom group has expand chevron and group label
+      expect(find.text('Лимфоу.', skipOffstage: false), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_down, skipOffstage: false), findsWidgets);
+
+      drawBloc.close();
+    });
   });
 }

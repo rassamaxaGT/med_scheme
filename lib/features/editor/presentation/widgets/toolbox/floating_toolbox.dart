@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -102,6 +103,8 @@ class _ToolGroupDefinition {
 class _FloatingToolboxState extends State<FloatingToolbox> {
   String? _expandedGroupId;
 
+  static final Map<String, Uint8List> _thumbnailBytesCache = {};
+
   static Widget buildStampThumbnail(
     String path, {
     double? width,
@@ -111,9 +114,16 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
   }) {
     if (path.startsWith('data:image')) {
       try {
-        final commaIndex = path.indexOf(',');
-        final base64Data = commaIndex != -1 ? path.substring(commaIndex + 1) : path;
-        final bytes = base64Decode(base64Data);
+        Uint8List? bytes = _thumbnailBytesCache[path];
+        if (bytes == null) {
+          final commaIndex = path.indexOf(',');
+          final base64Data = commaIndex != -1 ? path.substring(commaIndex + 1) : path;
+          bytes = base64Decode(base64Data);
+          if (_thumbnailBytesCache.length > 50) {
+            _thumbnailBytesCache.remove(_thumbnailBytesCache.keys.first);
+          }
+          _thumbnailBytesCache[path] = bytes;
+        }
         return Image.memory(
           bytes,
           width: width,
@@ -621,11 +631,13 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
 
     // Добавляем созданные пользователем группы
     for (final customGroupName in drawState.customGroups) {
-      if (!groups.any((g) => g.id == customGroupName || g.name == customGroupName)) {
+      final trimmed = customGroupName.trim();
+      if (trimmed.isEmpty) continue;
+      if (!groups.any((g) => g.id == trimmed || g.name == trimmed)) {
         groups.add(_ToolGroupDefinition(
-          id: customGroupName,
-          name: customGroupName,
-          icon: Icons.bookmark,
+          id: trimmed,
+          name: trimmed,
+          icon: Icons.bookmark_border,
           isCustomGroup: true,
           items: [],
         ));
@@ -642,18 +654,19 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         }
       }
       if (targetGroup == null) {
-        targetGroup = _ToolGroupDefinition(
-          id: stamp.groupId,
-          name: stamp.groupId,
-          icon: Icons.bookmark,
-          isCustomGroup: true,
-          items: [],
-        );
-        groups.add(targetGroup);
+        if (drawState.customGroups.isNotEmpty) {
+          final firstCustom = drawState.customGroups.first.trim();
+          targetGroup = groups.firstWhere(
+            (g) => g.id == firstCustom || g.name == firstCustom,
+            orElse: () => groups.firstWhere((g) => g.id == 'custom_stamps'),
+          );
+        } else {
+          targetGroup = groups.firstWhere((g) => g.id == 'custom_stamps');
+        }
       }
 
       // Если в группе штампов был плейсхолдер — удаляем его при наличии реальных штампов
-      targetGroup.items.removeWhere((it) => it.id == 'add_stamp_placeholder');
+      targetGroup.items.removeWhere((it) => it.id.startsWith('add_stamp_placeholder'));
 
       final bool isStampSelected = widget.currentTool == ToolType.customStamp &&
           (drawState.activeStampItem?.id == stamp.id ||
@@ -664,7 +677,7 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         id: stamp.id,
         tool: ToolType.customStamp,
         label: stamp.name,
-        tooltip: 'Штамп: ${stamp.name} (долгий клик — настройки)',
+        tooltip: '${targetGroup.name}: ${stamp.name} (долгий клик — настройки)',
         icon: Icons.image,
         customStampPath: stamp.imagePath,
         customStampItem: stamp,
@@ -677,6 +690,21 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         },
         onLongPress: () => _showCustomStampOptions(context, stamp),
       ));
+    }
+
+    // Для пустых пользовательских групп добавляем интерактивный плейсхолдер
+    for (final g in groups) {
+      if (g.isCustomGroup && g.items.isEmpty) {
+        g.items.add(_ToolItemDefinition(
+          id: 'add_stamp_placeholder_${g.id}',
+          tool: ToolType.customStamp,
+          label: g.name,
+          tooltip: 'Группа "${g.name}": нажмите, чтобы добавить штамп (долгий клик — удалить группу)',
+          icon: Icons.add_photo_alternate_outlined,
+          onTapOverride: () => _pickAndAddStamp(context, defaultGroupId: g.id),
+          onLongPress: () => _showEmptyGroupOptions(context, g),
+        ));
+      }
     }
 
     return groups;
@@ -694,11 +722,21 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     // Правило: если в группе ровно 1 инструмент — отображается сам по себе
     if (group.items.length == 1) {
       final item = group.items.first;
+      final displayLabel = group.isCustomGroup
+          ? (isVertical && group.name.length > 7
+              ? '${group.name.substring(0, 6)}.'
+              : group.name)
+          : item.getDisplayLabel(isVertical);
+
+      final displayTooltip = group.isCustomGroup && item.customStampItem != null
+          ? '${group.name}: ${item.label} (долгий клик — настройки)'
+          : item.tooltip;
+
       return _buildToolButton(
         context,
         tool: item.tool,
-        label: item.getDisplayLabel(isVertical),
-        tooltip: item.tooltip,
+        label: displayLabel,
+        tooltip: displayTooltip,
         icon: item.icon,
         customColor: item.color,
         isVertical: isVertical,
@@ -801,11 +839,21 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         ),
       );
     } else {
+      final displayLabel = group.isCustomGroup
+          ? (isVertical && group.name.length > 7
+              ? '${group.name.substring(0, 6)}.'
+              : group.name)
+          : activeItem.getDisplayLabel(isVertical);
+
+      final displayTooltip = group.isCustomGroup
+          ? '${group.name}: ${activeItem.label} (раскройте группу для выбора)'
+          : activeItem.tooltip;
+
       final mainButton = _buildToolButton(
         context,
         tool: activeItem.tool,
-        label: activeItem.getDisplayLabel(isVertical),
-        tooltip: activeItem.tooltip,
+        label: displayLabel,
+        tooltip: displayTooltip,
         icon: activeItem.icon,
         customColor: activeItem.color,
         isVertical: isVertical,
@@ -913,12 +961,14 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         );
 
         if (dialogResult != null && context.mounted) {
+          final targetGroupId = dialogResult.groupId.trim();
+          final targetGroupName = dialogResult.groupName.trim();
           if (dialogResult.isNewGroup) {
-            drawBloc.add(CreateCustomGroupEvent(dialogResult.groupName));
+            drawBloc.add(CreateCustomGroupEvent(targetGroupName));
           }
           drawBloc.add(AddCustomStampItemEvent(
             name: dialogResult.name,
-            groupId: dialogResult.groupId,
+            groupId: targetGroupId,
             sourceFilePath: p,
             bytes: bytes,
           ));
@@ -1041,6 +1091,56 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showEmptyGroupOptions(BuildContext context, _ToolGroupDefinition group) {
+    final drawBloc = context.read<DrawBloc>();
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF22272E),
+          title: Row(
+            children: [
+              const Icon(Icons.bookmark_border, color: Colors.cyanAccent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Группа: ${group.name}',
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'В этой группе пока нет штампов. Вы можете загрузить штамп или удалить группу.',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                drawBloc.add(DeleteCustomGroupEvent(group.name));
+              },
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 16),
+              label: const Text('Удалить группу', style: TextStyle(color: Colors.redAccent)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _pickAndAddStamp(context, defaultGroupId: group.id);
+              },
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: const Text('Добавить штамп'),
+            ),
+          ],
         );
       },
     );

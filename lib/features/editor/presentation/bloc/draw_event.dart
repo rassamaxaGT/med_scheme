@@ -219,3 +219,8 @@ class CreateCustomGroupEvent extends DrawEvent {
   final String groupName;
   CreateCustomGroupEvent(this.groupName);
 }
+
+class DeleteCustomGroupEvent extends DrawEvent {
+  final String groupName;
+  DeleteCustomGroupEvent(this.groupName);
+}
