@@ -9,6 +9,8 @@ import '../../../data/services/custom_stamps_service.dart';
 import '../../../domain/entities/draw_action.dart';
 import '../../bloc/draw_bloc.dart';
 import '../../bloc/draw_event.dart';
+import '../../bloc/draw_state.dart';
+import '../dialogs/add_custom_stamp_dialog.dart';
 
 enum ToolboxOrientation { horizontal, verticalLeft, verticalRight }
 
@@ -38,11 +40,67 @@ class FloatingToolbox extends StatefulWidget {
   State<FloatingToolbox> createState() => _FloatingToolboxState();
 }
 
+class _ToolItemDefinition {
+  final String id;
+  final ToolType tool;
+  final String label;
+  final String? verticalLabel;
+  final String tooltip;
+  final IconData icon;
+  final Color? color;
+  final bool? isDashed;
+  final bool? isSelectedOverride;
+  final VoidCallback? onTapOverride;
+  final VoidCallback? onLongPress;
+  final String? customStampPath;
+  final CustomStampItem? customStampItem;
+  final bool isCustomStamp;
+
+  _ToolItemDefinition({
+    required this.id,
+    required this.tool,
+    required this.label,
+    this.verticalLabel,
+    required this.tooltip,
+    required this.icon,
+    this.color,
+    this.isDashed,
+    this.isSelectedOverride,
+    this.onTapOverride,
+    this.onLongPress,
+    this.customStampPath,
+    this.customStampItem,
+    this.isCustomStamp = false,
+  });
+
+  String getDisplayLabel(bool isVertical) {
+    if (isVertical && verticalLabel != null) {
+      return verticalLabel!;
+    }
+    return label;
+  }
+}
+
+class _ToolGroupDefinition {
+  final String id;
+  final String name;
+  final IconData icon;
+  final Color? color;
+  final List<_ToolItemDefinition> items;
+  final bool isCustomGroup;
+
+  _ToolGroupDefinition({
+    required this.id,
+    required this.name,
+    required this.icon,
+    this.color,
+    required this.items,
+    this.isCustomGroup = false,
+  });
+}
+
 class _FloatingToolboxState extends State<FloatingToolbox> {
-  bool _isInfiltrateSubMenuOpen = false;
-  bool _isMyomaSubMenuOpen = false;
-  bool _isIudSubMenuOpen = false;
-  bool _isCustomStampSubMenuOpen = false;
+  String? _expandedGroupId;
 
   static Widget buildStampThumbnail(
     String path, {
@@ -179,177 +237,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                     direction: isVertical ? Axis.vertical : Axis.horizontal,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 1. Инфильтрат (с раскрывающимся подменю: Инфильтрат брюшины / Инфильтрат кишки / ГУИ)
-                      _buildInfiltrateMenu(context, isVertical),
-
-                      // 2. Эндометриома
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.endometrioma,
-                        label: isVertical ? 'Эндомет.' : 'Эндометриома',
-                        tooltip: 'Эндометриома (коричневый круг)',
-                        icon: Icons.circle,
-                        customColor: const Color(0xFF5C4033),
-                        isVertical: isVertical,
-                      ),
-
-                      // 3. Спайки
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.adhesions,
-                        label: 'Спайки',
-                        tooltip: 'Спайки (паутина)',
-                        icon: Icons.grain,
-                        customColor: const Color(0xFF9E9E9E), // Grey
-                        isVertical: isVertical,
-                      ),
-
-                      // 4. Фиброз
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.fibrosis,
-                        label: 'Фиброз',
-                        tooltip: 'Фиброз (кисть со штриховкой)',
-                        icon: Icons.linear_scale,
-                        isVertical: isVertical,
-                      ),
-
-                      // 5. Миома (группа: условное обозначение + штамп)
-                      _buildMyomaMenu(context, isVertical),
-
-                      // 6. ВМС (группа: условное обозначение + штамп Мирена)
-                      _buildIudMenu(context, isVertical),
-
-                      // 7. Очаг
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.foci,
-                        label: 'Очаг',
-                        tooltip: 'Очаг эндометриоза',
-                        icon: Icons.bubble_chart,
-                        customColor: const Color(
-                          0xFF880E4F,
-                        ), // Cherry / Вишневый
-                        isVertical: isVertical,
-                      ),
-
-                      // 8. Фолликул
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.follicle,
-                        label: 'Фоллик.',
-                        tooltip: 'Фолликул (фиксированный круг 8px)',
-                        icon: Icons.radio_button_unchecked,
-                        customColor: const Color(0xFF03A9F4), // Light Blue
-                        isVertical: isVertical,
-                      ),
-
-                      // 8.1 Киста (измеряемая овалами, без заливки)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.cyst,
-                        label: 'Киста',
-                        tooltip: 'Киста (измеряемая по размеру, без заливки)',
-                        icon: Icons.panorama_fish_eye,
-                        customColor: const Color(
-                          0xFFFFD600,
-                        ), // Saturated Yellow
-                        isVertical: isVertical,
-                      ),
-
-                      // 9. Аденомиоз (новый)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.adenomyosis,
-                        label: 'Аденом.',
-                        tooltip: 'Узловой аденомиоз (вишневый размытый круг)',
-                        icon: Icons.blur_on,
-                        customColor: const Color(0xFF880E4F), // Cherry
-                        isVertical: isVertical,
-                      ),
-
-                      // 10. Полип (новый)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.polyp,
-                        label: 'Полип',
-                        tooltip: 'Полип эндометрия',
-                        icon: Icons.spa,
-                        customColor: const Color(0xFFFF7043), // Peach/Orange
-                        isVertical: isVertical,
-                      ),
-
-                      // 11. PNG Штамп (подменю с 4 слотами)
-                      _buildCustomStampMenu(context, isVertical),
-
-                      // 12. Линия расстояния (dashed)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.arrow,
-                        label: isVertical ? 'Расст.' : 'Расстояние',
-                        tooltip: 'Линия измерения расстояния (пунктир)',
-                        icon: Icons.linear_scale,
-                        isVertical: isVertical,
-                        isDashedForce: true,
-                        isSelectedOverride:
-                            widget.currentTool == ToolType.arrow &&
-                            context.read<DrawBloc>().state.currentLineDashed,
-                        onTapOverride: () {
-                          context.read<DrawBloc>().add(
-                            ToggleLineDashedEvent(true),
-                          );
-                          widget.onToolSelected(ToolType.arrow);
-                        },
-                      ),
-
-                      // 13. Линия-указатель (solid arrow)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.arrow,
-                        label: isVertical ? 'Указат.' : 'Указатель',
-                        tooltip: 'Линия-указатель (стрелка)',
-                        icon: Icons.arrow_outward,
-                        isVertical: isVertical,
-                        isDashedForce: false,
-                        isSelectedOverride:
-                            widget.currentTool == ToolType.arrow &&
-                            !context.read<DrawBloc>().state.currentLineDashed,
-                        onTapOverride: () {
-                          context.read<DrawBloc>().add(
-                            ToggleLineDashedEvent(false),
-                          );
-                          widget.onToolSelected(ToolType.arrow);
-                        },
-                      ),
-
-                      // 14. Кисть (pencil)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.pencil,
-                        label: 'Кисть',
-                        tooltip: 'Обычная кисть',
-                        icon: Icons.brush,
-                        isVertical: isVertical,
-                      ),
-
-                      // 14.1 Спрей (баллончик)
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.spray,
-                        label: 'Спрей',
-                        tooltip: 'Спрей / Баллончик',
-                        icon: Icons.blur_on,
-                        isVertical: isVertical,
-                      ),
-
-                      // 15. Ластик
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.eraser,
-                        label: 'Ластик',
-                        tooltip: 'Ластик',
-                        icon: Icons.cleaning_services,
-                        isVertical: isVertical,
+                      ..._getToolGroups(context, context.watch<DrawBloc>().state).map(
+                        (group) => _buildToolGroup(context, group, isVertical),
                       ),
                     ],
                   ),
@@ -362,376 +251,525 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     );
   }
 
-  Widget _buildInfiltrateMenu(BuildContext context, bool isVertical) {
-    final activeTool = widget.currentTool;
-    final isAnySubToolActive =
-        activeTool == ToolType.infiltrate ||
-        activeTool == ToolType.bowelInfiltrate ||
-        activeTool == ToolType.infiltrateStamp2 ||
-        activeTool == ToolType.bowelInfiltrate2 ||
-        activeTool == ToolType.gui;
-
-    final subTools = [
-      _SubToolData(
-        tool: ToolType.infiltrate,
-        label: 'Инфильтрат',
-        tooltip: 'Глубокий эндометриоидный инфильтрат (коричневый)',
+  List<_ToolGroupDefinition> _getToolGroups(
+    BuildContext context,
+    DrawState drawState,
+  ) {
+    final groups = <_ToolGroupDefinition>[
+      // 1. Инфильтрат
+      _ToolGroupDefinition(
+        id: 'infiltrate',
+        name: 'Инфильтрат',
         icon: Icons.blur_linear,
         color: const Color(0xFF5C4033),
+        items: [
+          _ToolItemDefinition(
+            id: 'infiltrate',
+            tool: ToolType.infiltrate,
+            label: 'Инфильтрат',
+            tooltip: 'Глубокий эндометриоидный инфильтрат (коричневый)',
+            icon: Icons.blur_linear,
+            color: const Color(0xFF5C4033),
+          ),
+          _ToolItemDefinition(
+            id: 'bowelInfiltrate',
+            tool: ToolType.bowelInfiltrate,
+            label: 'Инф. кишки',
+            verticalLabel: 'Инф.киш',
+            tooltip: 'Инфильтрат кишки (штамп)',
+            icon: Icons.waves,
+            color: const Color(0xFF5C4033),
+          ),
+          _ToolItemDefinition(
+            id: 'infiltrateStamp2',
+            tool: ToolType.infiltrateStamp2,
+            label: 'Штамп 2',
+            tooltip: 'Инфильтрат (штамп 2)',
+            icon: Icons.waves,
+            color: const Color(0xFF5C4033),
+          ),
+          _ToolItemDefinition(
+            id: 'bowelInfiltrate2',
+            tool: ToolType.bowelInfiltrate2,
+            label: 'Инфильтрат 2',
+            verticalLabel: 'Инф. 2',
+            tooltip: 'Инфильтрат 2 (дуга с фестонами)',
+            icon: Icons.waves,
+            color: const Color(0xFF5C4033),
+          ),
+          _ToolItemDefinition(
+            id: 'gui',
+            tool: ToolType.gui,
+            label: 'ГУИ',
+            tooltip: 'Головной убор индейца (фиолетовый)',
+            icon: Icons.style,
+            color: const Color(0xFF8E24AA),
+          ),
+        ],
       ),
-      _SubToolData(
-        tool: ToolType.bowelInfiltrate,
-        label: 'Инф. кишки',
-        tooltip: 'Инфильтрат кишки (штамп)',
-        icon: Icons.waves,
+
+      // 2. Эндометриома
+      _ToolGroupDefinition(
+        id: 'endometrioma',
+        name: 'Эндометриома',
+        icon: Icons.circle,
         color: const Color(0xFF5C4033),
-      ),
-      _SubToolData(
-        tool: ToolType.infiltrateStamp2,
-        label: 'Штамп 2',
-        tooltip: 'Инфильтрат (штамп 2)',
-        icon: Icons.waves,
-        color: const Color(0xFF5C4033),
-      ),
-      _SubToolData(
-        tool: ToolType.bowelInfiltrate2,
-        label: 'Инфильтрат 2',
-        tooltip: 'Инфильтрат 2 (дуга с фестонами)',
-        icon: Icons.waves,
-        color: const Color(0xFF5C4033),
-      ),
-      _SubToolData(
-        tool: ToolType.gui,
-        label: 'ГУИ',
-        tooltip: 'Головной убор индейца (фиолетовый)',
-        icon: Icons.style,
-        color: const Color(0xFF8E24AA),
-      ),
-    ];
-
-    if (_isInfiltrateSubMenuOpen) {
-      final items = subTools.map((data) {
-        return _buildToolButton(
-          context,
-          tool: data.tool,
-          label: isVertical
-              ? (data.tool == ToolType.bowelInfiltrate
-                    ? 'Инф.киш'
-                    : (data.tool == ToolType.infiltrateStamp2
-                          ? 'Штамп 2'
-                          : (data.tool == ToolType.bowelInfiltrate2
-                              ? 'Инф. 2'
-                              : data.label)))
-              : data.label,
-          tooltip: data.tooltip,
-          icon: data.icon,
-          customColor: data.color,
-          isVertical: isVertical,
-          onTapOverride: () {
-            widget.onToolSelected(data.tool);
-            setState(() {
-              _isInfiltrateSubMenuOpen = false;
-            });
-          },
-        );
-      }).toList();
-
-      final collapseBtn = GestureDetector(
-        onTap: () => setState(() => _isInfiltrateSubMenuOpen = false),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: const BoxDecoration(
-            color: Colors.white10,
-            shape: BoxShape.circle,
+        items: [
+          _ToolItemDefinition(
+            id: 'endometrioma',
+            tool: ToolType.endometrioma,
+            label: 'Эндометриома',
+            verticalLabel: 'Эндомет.',
+            tooltip: 'Эндометриома (коричневый круг)',
+            icon: Icons.circle,
+            color: const Color(0xFF5C4033),
           ),
-          child: Icon(
-            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
-            size: 14,
-            color: Colors.white70,
+        ],
+      ),
+
+      // 3. Спайки
+      _ToolGroupDefinition(
+        id: 'adhesions',
+        name: 'Спайки',
+        icon: Icons.grain,
+        color: const Color(0xFF9E9E9E),
+        items: [
+          _ToolItemDefinition(
+            id: 'adhesions',
+            tool: ToolType.adhesions,
+            label: 'Спайки',
+            tooltip: 'Спайки (паутина)',
+            icon: Icons.grain,
+            color: const Color(0xFF9E9E9E),
           ),
-        ),
-      );
+        ],
+      ),
 
-      return Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: isVertical
-              ? [...items, collapseBtn]
-              : [collapseBtn, ...items],
-        ),
-      );
-    } else {
-      final defaultData = subTools.firstWhere(
-        (t) => t.tool == activeTool,
-        orElse: () => subTools.first,
-      );
-
-      final mainButton = _buildToolButton(
-        context,
-        tool: defaultData.tool,
-        label: isVertical
-            ? (defaultData.tool == ToolType.bowelInfiltrate
-                  ? 'Инф.киш'
-                  : (defaultData.tool == ToolType.infiltrateStamp2
-                        ? 'Штамп 2'
-                        : (defaultData.tool == ToolType.bowelInfiltrate2
-                              ? 'Инф. 2'
-                              : defaultData.label)))
-            : defaultData.label,
-        tooltip: defaultData.tooltip,
-        icon: defaultData.icon,
-        customColor: defaultData.color,
-        isVertical: isVertical,
-      );
-
-      final expandTrigger = Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _isInfiltrateSubMenuOpen = true),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: isVertical ? 12.0 : 2.0,
-              vertical: isVertical ? 2.0 : 12.0,
-            ),
-            child: Icon(
-              isVertical
-                  ? Icons.keyboard_arrow_down
-                  : Icons.keyboard_arrow_right,
-              size: 16,
-              color: isAnySubToolActive ? Colors.white : Colors.white70,
-            ),
+      // 4. Фиброз
+      _ToolGroupDefinition(
+        id: 'fibrosis',
+        name: 'Фиброз',
+        icon: Icons.linear_scale,
+        items: [
+          _ToolItemDefinition(
+            id: 'fibrosis',
+            tool: ToolType.fibrosis,
+            label: 'Фиброз',
+            tooltip: 'Фиброз (кисть со штриховкой)',
+            icon: Icons.linear_scale,
           ),
-        ),
-      );
+        ],
+      ),
 
-      return Container(
-        decoration: BoxDecoration(
-          color: isAnySubToolActive
-              ? (defaultData.color).withValues(alpha: 0.15)
-              : Colors.white.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isAnySubToolActive
-                ? defaultData.color
-                : Colors.white.withValues(alpha: 0.1),
-            width: 1.0,
-          ),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            mainButton,
-            Container(
-              height: isVertical ? 1.0 : 28.0,
-              width: isVertical ? 28.0 : 1.0,
-              color: Colors.white.withValues(alpha: 0.15),
-            ),
-            expandTrigger,
-          ],
-        ),
-      );
-    }
-  }
-
-  Widget _buildMyomaMenu(BuildContext context, bool isVertical) {
-    final activeTool = widget.currentTool;
-    final isAnySubToolActive =
-        activeTool == ToolType.myoma || activeTool == ToolType.myomaStamp;
-
-    final subTools = [
-      _SubToolData(
-        tool: ToolType.myoma,
-        label: 'Миома',
-        tooltip: 'Миома (условное обозначение)',
+      // 5. Миома
+      _ToolGroupDefinition(
+        id: 'myoma',
+        name: 'Миома',
         icon: Icons.circle_outlined,
         color: const Color(0xFFFF69B4),
+        items: [
+          _ToolItemDefinition(
+            id: 'myoma',
+            tool: ToolType.myoma,
+            label: 'Миома',
+            tooltip: 'Миома (условное обозначение)',
+            icon: Icons.circle_outlined,
+            color: const Color(0xFFFF69B4),
+          ),
+          _ToolItemDefinition(
+            id: 'myomaStamp',
+            tool: ToolType.myomaStamp,
+            label: 'Штамп',
+            tooltip: 'Миома (штамп PNG)',
+            icon: Icons.circle,
+            color: const Color(0xFFFF69B4),
+          ),
+        ],
       ),
-      _SubToolData(
-        tool: ToolType.myomaStamp,
-        label: 'Штамп',
-        tooltip: 'Миома (штамп PNG)',
-        icon: Icons.circle,
-        color: const Color(0xFFFF69B4),
-      ),
-    ];
 
-    if (_isMyomaSubMenuOpen) {
-      final items = subTools.map((data) {
-        return _buildToolButton(
-          context,
-          tool: data.tool,
-          label: isVertical
-              ? (data.tool == ToolType.myomaStamp ? 'Штамп' : 'Миома')
-              : data.label,
-          tooltip: data.tooltip,
-          icon: data.icon,
-          customColor: data.color,
-          isVertical: isVertical,
-          onTapOverride: () {
-            widget.onToolSelected(data.tool);
-            setState(() {
-              _isMyomaSubMenuOpen = false;
-            });
-          },
-        );
-      }).toList();
-
-      final collapseBtn = GestureDetector(
-        onTap: () => setState(() => _isMyomaSubMenuOpen = false),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: const BoxDecoration(
-            color: Colors.white10,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
-            size: 14,
-            color: Colors.white70,
-          ),
-        ),
-      );
-
-      return Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: isVertical
-              ? [...items, collapseBtn]
-              : [collapseBtn, ...items],
-        ),
-      );
-    } else {
-      final defaultData = subTools.firstWhere(
-        (t) => t.tool == activeTool,
-        orElse: () => subTools.first,
-      );
-
-      final mainButton = _buildToolButton(
-        context,
-        tool: defaultData.tool,
-        label: isVertical
-            ? (defaultData.tool == ToolType.myomaStamp ? 'Штамп' : 'Миома')
-            : defaultData.label,
-        tooltip: defaultData.tooltip,
-        icon: defaultData.icon,
-        customColor: defaultData.color,
-        isVertical: isVertical,
-      );
-
-      final expandTrigger = Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _isMyomaSubMenuOpen = true),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: isVertical ? 12.0 : 2.0,
-              vertical: isVertical ? 2.0 : 12.0,
-            ),
-            child: Icon(
-              isVertical
-                  ? Icons.keyboard_arrow_down
-                  : Icons.keyboard_arrow_right,
-              size: 16,
-              color: isAnySubToolActive ? Colors.white : Colors.white70,
-            ),
-          ),
-        ),
-      );
-
-      return Container(
-        decoration: BoxDecoration(
-          color: isAnySubToolActive
-              ? (defaultData.color).withValues(alpha: 0.15)
-              : Colors.white.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isAnySubToolActive
-                ? defaultData.color
-                : Colors.white.withValues(alpha: 0.1),
-            width: 1.0,
-          ),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            mainButton,
-            Container(
-              height: isVertical ? 1.0 : 28.0,
-              width: isVertical ? 28.0 : 1.0,
-              color: Colors.white.withValues(alpha: 0.15),
-            ),
-            expandTrigger,
-          ],
-        ),
-      );
-    }
-  }
-
-  Widget _buildIudMenu(BuildContext context, bool isVertical) {
-    final activeTool = widget.currentTool;
-    final isAnySubToolActive =
-        activeTool == ToolType.iud || activeTool == ToolType.iudStamp;
-
-    final subTools = [
-      _SubToolData(
-        tool: ToolType.iud,
-        label: 'ВМС',
-        tooltip: 'ВМС (условное обозначение)',
+      // 6. ВМС
+      _ToolGroupDefinition(
+        id: 'iud',
+        name: 'ВМС',
         icon: Icons.webhook,
         color: const Color(0xFF000000),
+        items: [
+          _ToolItemDefinition(
+            id: 'iud',
+            tool: ToolType.iud,
+            label: 'ВМС',
+            tooltip: 'ВМС (условное обозначение)',
+            icon: Icons.webhook,
+            color: const Color(0xFF000000),
+          ),
+          _ToolItemDefinition(
+            id: 'iudStamp',
+            tool: ToolType.iudStamp,
+            label: 'Мирена',
+            tooltip: 'Мирена (штамп PNG)',
+            icon: Icons.straighten,
+            color: const Color(0xFF000000),
+          ),
+        ],
       ),
-      _SubToolData(
-        tool: ToolType.iudStamp,
-        label: 'Мирена',
-        tooltip: 'Мирена (штамп PNG)',
-        icon: Icons.straighten,
-        color: const Color(0xFF000000),
+
+      // 7. Очаг
+      _ToolGroupDefinition(
+        id: 'foci',
+        name: 'Очаг',
+        icon: Icons.bubble_chart,
+        color: const Color(0xFF880E4F),
+        items: [
+          _ToolItemDefinition(
+            id: 'foci',
+            tool: ToolType.foci,
+            label: 'Очаг',
+            tooltip: 'Очаг эндометриоза',
+            icon: Icons.bubble_chart,
+            color: const Color(0xFF880E4F),
+          ),
+        ],
+      ),
+
+      // 8. Фолликул
+      _ToolGroupDefinition(
+        id: 'follicle',
+        name: 'Фолликул',
+        icon: Icons.radio_button_unchecked,
+        color: const Color(0xFF03A9F4),
+        items: [
+          _ToolItemDefinition(
+            id: 'follicle',
+            tool: ToolType.follicle,
+            label: 'Фолликул',
+            verticalLabel: 'Фоллик.',
+            tooltip: 'Фолликул (фиксированный круг 8px)',
+            icon: Icons.radio_button_unchecked,
+            color: const Color(0xFF03A9F4),
+          ),
+        ],
+      ),
+
+      // 9. Киста
+      _ToolGroupDefinition(
+        id: 'cyst',
+        name: 'Киста',
+        icon: Icons.panorama_fish_eye,
+        color: const Color(0xFFFFD600),
+        items: [
+          _ToolItemDefinition(
+            id: 'cyst',
+            tool: ToolType.cyst,
+            label: 'Киста',
+            tooltip: 'Киста (измеряемая по размеру, без заливки)',
+            icon: Icons.panorama_fish_eye,
+            color: const Color(0xFFFFD600),
+          ),
+        ],
+      ),
+
+      // 10. Аденомиоз
+      _ToolGroupDefinition(
+        id: 'adenomyosis',
+        name: 'Аденомиоз',
+        icon: Icons.blur_on,
+        color: const Color(0xFF880E4F),
+        items: [
+          _ToolItemDefinition(
+            id: 'adenomyosis',
+            tool: ToolType.adenomyosis,
+            label: 'Аденомиоз',
+            verticalLabel: 'Аденом.',
+            tooltip: 'Узловой аденомиоз (вишневый размытый круг)',
+            icon: Icons.blur_on,
+            color: const Color(0xFF880E4F),
+          ),
+        ],
+      ),
+
+      // 11. Полип
+      _ToolGroupDefinition(
+        id: 'polyp',
+        name: 'Полип',
+        icon: Icons.spa,
+        color: const Color(0xFFFF7043),
+        items: [
+          _ToolItemDefinition(
+            id: 'polyp',
+            tool: ToolType.polyp,
+            label: 'Полип',
+            tooltip: 'Полип эндометрия',
+            icon: Icons.spa,
+            color: const Color(0xFFFF7043),
+          ),
+        ],
+      ),
+
+      // 12. Штампы (пользовательские штампы)
+      _ToolGroupDefinition(
+        id: 'custom_stamps',
+        name: 'Штампы',
+        icon: Icons.image_outlined,
+        items: [
+          _ToolItemDefinition(
+            id: 'add_stamp_placeholder',
+            tool: ToolType.customStamp,
+            label: 'Штамп',
+            tooltip: 'Загрузить пользовательский PNG-штамп',
+            icon: Icons.add_photo_alternate_outlined,
+            onTapOverride: () => _pickAndAddStamp(context, defaultGroupId: 'custom_stamps'),
+          ),
+        ],
+      ),
+
+      // 13. Линия расстояния
+      _ToolGroupDefinition(
+        id: 'arrow_distance',
+        name: 'Расстояние',
+        icon: Icons.linear_scale,
+        items: [
+          _ToolItemDefinition(
+            id: 'arrow_distance',
+            tool: ToolType.arrow,
+            label: 'Расстояние',
+            verticalLabel: 'Расст.',
+            tooltip: 'Линия измерения расстояния (пунктир)',
+            icon: Icons.linear_scale,
+            isDashed: true,
+            isSelectedOverride: widget.currentTool == ToolType.arrow &&
+                drawState.currentLineDashed,
+            onTapOverride: () {
+              context.read<DrawBloc>().add(ToggleLineDashedEvent(true));
+              widget.onToolSelected(ToolType.arrow);
+            },
+          ),
+        ],
+      ),
+
+      // 14. Линия-указатель
+      _ToolGroupDefinition(
+        id: 'arrow_pointer',
+        name: 'Указатель',
+        icon: Icons.arrow_outward,
+        items: [
+          _ToolItemDefinition(
+            id: 'arrow_pointer',
+            tool: ToolType.arrow,
+            label: 'Указатель',
+            verticalLabel: 'Указат.',
+            tooltip: 'Линия-указатель (стрелка)',
+            icon: Icons.arrow_outward,
+            isDashed: false,
+            isSelectedOverride: widget.currentTool == ToolType.arrow &&
+                !drawState.currentLineDashed,
+            onTapOverride: () {
+              context.read<DrawBloc>().add(ToggleLineDashedEvent(false));
+              widget.onToolSelected(ToolType.arrow);
+            },
+          ),
+        ],
+      ),
+
+      // 15. Кисть
+      _ToolGroupDefinition(
+        id: 'pencil',
+        name: 'Кисть',
+        icon: Icons.brush,
+        items: [
+          _ToolItemDefinition(
+            id: 'pencil',
+            tool: ToolType.pencil,
+            label: 'Кисть',
+            tooltip: 'Обычная кисть',
+            icon: Icons.brush,
+          ),
+        ],
+      ),
+
+      // 16. Спрей
+      _ToolGroupDefinition(
+        id: 'spray',
+        name: 'Спрей',
+        icon: Icons.blur_on,
+        items: [
+          _ToolItemDefinition(
+            id: 'spray',
+            tool: ToolType.spray,
+            label: 'Спрей',
+            tooltip: 'Спрей / Баллончик',
+            icon: Icons.blur_on,
+          ),
+        ],
+      ),
+
+      // 17. Ластик
+      _ToolGroupDefinition(
+        id: 'eraser',
+        name: 'Ластик',
+        icon: Icons.cleaning_services,
+        items: [
+          _ToolItemDefinition(
+            id: 'eraser',
+            tool: ToolType.eraser,
+            label: 'Ластик',
+            tooltip: 'Ластик',
+            icon: Icons.cleaning_services,
+          ),
+        ],
       ),
     ];
 
-    if (_isIudSubMenuOpen) {
-      final items = subTools.map((data) {
+    // Добавляем созданные пользователем группы
+    for (final customGroupName in drawState.customGroups) {
+      if (!groups.any((g) => g.id == customGroupName || g.name == customGroupName)) {
+        groups.add(_ToolGroupDefinition(
+          id: customGroupName,
+          name: customGroupName,
+          icon: Icons.bookmark,
+          isCustomGroup: true,
+          items: [],
+        ));
+      }
+    }
+
+    // Распределяем кастомные штампы по группам
+    for (final stamp in drawState.customStampItems) {
+      _ToolGroupDefinition? targetGroup;
+      for (final g in groups) {
+        if (g.id == stamp.groupId || g.name == stamp.groupId) {
+          targetGroup = g;
+          break;
+        }
+      }
+      if (targetGroup == null) {
+        targetGroup = _ToolGroupDefinition(
+          id: stamp.groupId,
+          name: stamp.groupId,
+          icon: Icons.bookmark,
+          isCustomGroup: true,
+          items: [],
+        );
+        groups.add(targetGroup);
+      }
+
+      // Если в группе штампов был плейсхолдер — удаляем его при наличии реальных штампов
+      targetGroup.items.removeWhere((it) => it.id == 'add_stamp_placeholder');
+
+      final bool isStampSelected = widget.currentTool == ToolType.customStamp &&
+          (drawState.activeStampItem?.id == stamp.id ||
+              (drawState.customStampPath != null &&
+                  drawState.customStampPath == stamp.imagePath));
+
+      targetGroup.items.add(_ToolItemDefinition(
+        id: stamp.id,
+        tool: ToolType.customStamp,
+        label: stamp.name,
+        tooltip: 'Штамп: ${stamp.name} (долгий клик — настройки)',
+        icon: Icons.image,
+        customStampPath: stamp.imagePath,
+        customStampItem: stamp,
+        isCustomStamp: true,
+        isSelectedOverride: isStampSelected,
+        onTapOverride: () {
+          context.read<DrawBloc>().add(SelectCustomStampItemEvent(stamp));
+          widget.onToolSelected(ToolType.customStamp);
+          setState(() => _expandedGroupId = null);
+        },
+        onLongPress: () => _showCustomStampOptions(context, stamp),
+      ));
+    }
+
+    return groups;
+  }
+
+  Widget _buildToolGroup(
+    BuildContext context,
+    _ToolGroupDefinition group,
+    bool isVertical,
+  ) {
+    if (group.items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Правило: если в группе ровно 1 инструмент — отображается сам по себе
+    if (group.items.length == 1) {
+      final item = group.items.first;
+      return _buildToolButton(
+        context,
+        tool: item.tool,
+        label: item.getDisplayLabel(isVertical),
+        tooltip: item.tooltip,
+        icon: item.icon,
+        customColor: item.color,
+        isVertical: isVertical,
+        isSelectedOverride: item.isSelectedOverride,
+        isDashedForce: item.isDashed,
+        onTapOverride: item.onTapOverride,
+        onLongPress: item.onLongPress,
+        customStampPath: item.customStampPath,
+      );
+    }
+
+    // Правило: если в группе несколько инструментов — отображается как раскрывающаяся группа
+    final bool isExpanded = _expandedGroupId == group.id;
+
+    final isAnyItemActive = group.items.any((it) {
+      if (it.isSelectedOverride != null) return it.isSelectedOverride!;
+      return widget.currentTool == it.tool;
+    });
+
+    final activeItem = group.items.firstWhere(
+      (it) {
+        if (it.isSelectedOverride != null) return it.isSelectedOverride!;
+        return widget.currentTool == it.tool;
+      },
+      orElse: () => group.items.first,
+    );
+
+    if (isExpanded) {
+      final itemsWidgets = group.items.map((it) {
         return _buildToolButton(
           context,
-          tool: data.tool,
-          label: isVertical
-              ? (data.tool == ToolType.iudStamp ? 'Мирена' : 'ВМС')
-              : data.label,
-          tooltip: data.tooltip,
-          icon: data.icon,
-          customColor: data.color,
+          tool: it.tool,
+          label: it.getDisplayLabel(isVertical),
+          tooltip: it.tooltip,
+          icon: it.icon,
+          customColor: it.color,
           isVertical: isVertical,
-          onTapOverride: () {
-            widget.onToolSelected(data.tool);
-            setState(() {
-              _isIudSubMenuOpen = false;
-            });
+          isSelectedOverride: it.isSelectedOverride,
+          isDashedForce: it.isDashed,
+          onTapOverride: it.onTapOverride ?? () {
+            widget.onToolSelected(it.tool);
+            setState(() => _expandedGroupId = null);
           },
+          onLongPress: it.onLongPress,
+          customStampPath: it.customStampPath,
         );
       }).toList();
 
+      // Кнопка быстрого добавления штампа в эту группу
+      final addStampBtn = _RightTooltip(
+        message: 'Добавить штамп в "${group.name}"',
+        child: GestureDetector(
+          onTap: () => _pickAndAddStamp(context, defaultGroupId: group.id),
+          child: Container(
+            padding: const EdgeInsets.all(6),
+            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.add,
+              size: 14,
+              color: Colors.white70,
+            ),
+          ),
+        ),
+      );
+
       final collapseBtn = GestureDetector(
-        onTap: () => setState(() => _isIudSubMenuOpen = false),
+        onTap: () => setState(() => _expandedGroupId = null),
         child: Container(
           padding: const EdgeInsets.all(4),
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -758,33 +796,31 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           direction: isVertical ? Axis.vertical : Axis.horizontal,
           mainAxisSize: MainAxisSize.min,
           children: isVertical
-              ? [...items, collapseBtn]
-              : [collapseBtn, ...items],
+              ? [...itemsWidgets, addStampBtn, collapseBtn]
+              : [collapseBtn, ...itemsWidgets, addStampBtn],
         ),
       );
     } else {
-      final defaultData = subTools.firstWhere(
-        (t) => t.tool == activeTool,
-        orElse: () => subTools.first,
-      );
-
       final mainButton = _buildToolButton(
         context,
-        tool: defaultData.tool,
-        label: isVertical
-            ? (defaultData.tool == ToolType.iudStamp ? 'Мирена' : 'ВМС')
-            : defaultData.label,
-        tooltip: defaultData.tooltip,
-        icon: defaultData.icon,
-        customColor: defaultData.color,
+        tool: activeItem.tool,
+        label: activeItem.getDisplayLabel(isVertical),
+        tooltip: activeItem.tooltip,
+        icon: activeItem.icon,
+        customColor: activeItem.color,
         isVertical: isVertical,
+        isSelectedOverride: activeItem.isSelectedOverride,
+        isDashedForce: activeItem.isDashed,
+        onTapOverride: activeItem.onTapOverride,
+        onLongPress: activeItem.onLongPress,
+        customStampPath: activeItem.customStampPath,
       );
 
       final expandTrigger = Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _isIudSubMenuOpen = true),
+          onTap: () => setState(() => _expandedGroupId = group.id),
           child: Padding(
             padding: EdgeInsets.symmetric(
               horizontal: isVertical ? 12.0 : 2.0,
@@ -795,21 +831,24 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                   ? Icons.keyboard_arrow_down
                   : Icons.keyboard_arrow_right,
               size: 16,
-              color: isAnySubToolActive ? Colors.white : Colors.white70,
+              color: isAnyItemActive ? Colors.white : Colors.white70,
             ),
           ),
         ),
       );
 
+      final highlightColor =
+          activeItem.color ?? Theme.of(context).colorScheme.primary;
+
       return Container(
         decoration: BoxDecoration(
-          color: isAnySubToolActive
-              ? Colors.white.withValues(alpha: 0.12)
+          color: isAnyItemActive
+              ? highlightColor.withValues(alpha: 0.15)
               : Colors.white.withValues(alpha: 0.03),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isAnySubToolActive
-                ? Colors.white70
+            color: isAnyItemActive
+                ? highlightColor
                 : Colors.white.withValues(alpha: 0.1),
             width: 1.0,
           ),
@@ -831,328 +870,180 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     }
   }
 
-  Widget _buildCustomStampMenu(BuildContext context, bool isVertical) {
+  Future<void> _pickAndAddStamp(
+    BuildContext context, {
+    String? defaultGroupId,
+  }) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['png'],
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty && context.mounted) {
+        final file = result.files.single;
+        final bytes = file.bytes;
+        final p = kIsWeb ? null : file.path;
+
+        String defaultName = file.name;
+        if (defaultName.toLowerCase().endsWith('.png')) {
+          defaultName = defaultName.substring(0, defaultName.length - 4);
+        }
+
+        final drawBloc = context.read<DrawBloc>();
+        final drawState = drawBloc.state;
+        final groups = _getToolGroups(context, drawState);
+
+        final groupOptions = groups.map((g) {
+          return StampGroupOption(
+            id: g.id,
+            name: g.name,
+            icon: g.icon,
+            color: g.color,
+          );
+        }).toList();
+
+        final dialogResult = await AddCustomStampDialog.show(
+          context,
+          imagePath: p,
+          bytes: bytes,
+          defaultName: defaultName,
+          availableGroups: groupOptions,
+          initialGroupId: defaultGroupId ?? 'custom_stamps',
+        );
+
+        if (dialogResult != null && context.mounted) {
+          if (dialogResult.isNewGroup) {
+            drawBloc.add(CreateCustomGroupEvent(dialogResult.groupName));
+          }
+          drawBloc.add(AddCustomStampItemEvent(
+            name: dialogResult.name,
+            groupId: dialogResult.groupId,
+            sourceFilePath: p,
+            bytes: bytes,
+          ));
+          widget.onToolSelected(ToolType.customStamp);
+        }
+      }
+    } catch (e) {
+      debugPrint('Ошибка выбора PNG-штампа: $e');
+    }
+  }
+
+  void _showCustomStampOptions(BuildContext context, CustomStampItem stamp) {
     final drawBloc = context.read<DrawBloc>();
     final drawState = drawBloc.state;
-    final activeTool = widget.currentTool;
-    final bool isAnySubToolActive = activeTool == ToolType.customStamp;
+    final groups = _getToolGroups(context, drawState);
 
-    final slots = drawState.customStampSlots;
-    final activeSlot = drawState.activeStampSlotIndex;
-    final activePath = drawState.customStampPath;
-
-    Future<void> pickStampForSlot(int slotIndex) async {
-      try {
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: ['png'],
-          withData: true,
-        );
-        if (result != null && result.files.isNotEmpty) {
-          final file = result.files.single;
-          final bytes = file.bytes;
-          final p = kIsWeb ? null : file.path;
-          if (kIsWeb) {
-            if (bytes != null) {
-              drawBloc.add(AssignCustomStampSlotEvent(
-                slotIndex: slotIndex,
-                bytes: bytes,
-              ));
-              widget.onToolSelected(ToolType.customStamp);
-            }
-          } else {
-            if (p != null || bytes != null) {
-              drawBloc.add(AssignCustomStampSlotEvent(
-                slotIndex: slotIndex,
-                sourceFilePath: p,
-                bytes: bytes,
-              ));
-              widget.onToolSelected(ToolType.customStamp);
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('Ошибка выбора PNG-штампа: $e');
-      }
-    }
-
-    void showSlotOptions(int slotIndex, String currentPath) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF22272E),
-          title: Text(
-            'Слот ${slotIndex + 1}',
-            style: const TextStyle(color: Colors.white, fontSize: 16),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: buildStampThumbnail(currentPath, height: 80, iconSize: 48),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Вы хотите заменить изображение или очистить этот слот?',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                drawBloc.add(ClearCustomStampSlotEvent(slotIndex));
-              },
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 16),
-              label: const Text('Очистить слот', style: TextStyle(color: Colors.redAccent)),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                pickStampForSlot(slotIndex);
-              },
-              icon: const Icon(Icons.upload_file, size: 16),
-              label: const Text('Заменить PNG'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_isCustomStampSubMenuOpen) {
-      final List<Widget> slotItems = [];
-      for (int i = 0; i < CustomStampsService.slotCount; i++) {
-        final path = (i < slots.length) ? slots[i] : null;
-        final bool isSlotSelected = isAnySubToolActive && activeSlot == i && path != null;
-
-        if (path == null) {
-          final emptyBtn = _RightTooltip(
-            message: 'Слот ${i + 1} (пусто, нажмите для загрузки PNG)',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => pickStampForSlot(i),
-                child: Container(
-                  width: isVertical ? 44 : 36,
-                  height: isVertical ? 44 : 36,
-                  margin: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.white24,
-                      style: BorderStyle.solid,
-                      width: 1.0,
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        String currentGroupId = stamp.groupId;
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF22272E),
+              title: Row(
+                children: [
+                  const Icon(Icons.tune, color: Colors.cyanAccent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Штамп: ${stamp.name}',
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.add, size: 14, color: Colors.white70),
-                      Text(
-                        '${i + 1}',
-                        style: const TextStyle(fontSize: 9, color: Colors.white54, fontWeight: FontWeight.bold),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white24),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-          slotItems.add(emptyBtn);
-        } else {
-          final filledBtn = _RightTooltip(
-            message: 'Штамп ${i + 1} (долгий клик — настройки)',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () {
-                  drawBloc.add(SelectCustomStampSlotEvent(i));
-                  widget.onToolSelected(ToolType.customStamp);
-                  setState(() {
-                    _isCustomStampSubMenuOpen = false;
-                  });
-                },
-                onLongPress: () => showSlotOptions(i, path),
-                child: Container(
-                  width: isVertical ? 44 : 36,
-                  height: isVertical ? 44 : 36,
-                  margin: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: isSlotSelected
-                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
-                        : Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isSlotSelected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.white30,
-                      width: isSlotSelected ? 2.0 : 1.0,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: buildStampThumbnail(stamp.imagePath, iconSize: 40),
+                      ),
                     ),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(3.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: buildStampThumbnail(path, fit: BoxFit.contain, iconSize: 16),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Сменить группу:',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    initialValue: groups.any((g) => g.id == currentGroupId)
+                        ? currentGroupId
+                        : (groups.isNotEmpty ? groups.first.id : null),
+                    dropdownColor: const Color(0xFF1C2128),
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      filled: true,
+                      fillColor: Colors.white10,
+                      border:
+                          OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
+                    items: groups.map((g) {
+                      return DropdownMenuItem(
+                        value: g.id,
+                        child: Text(g.name,
+                            style: const TextStyle(color: Colors.white)),
+                      );
+                    }).toList(),
+                    onChanged: (newVal) {
+                      if (newVal != null) {
+                        setDialogState(() => currentGroupId = newVal);
+                      }
+                    },
                   ),
-                ),
+                ],
               ),
-            ),
-          );
-          slotItems.add(filledBtn);
-        }
-      }
-
-      final collapseBtn = GestureDetector(
-        onTap: () => setState(() => _isCustomStampSubMenuOpen = false),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: const BoxDecoration(
-            color: Colors.white10,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
-            size: 14,
-            color: Colors.white70,
-          ),
-        ),
-      );
-
-      return Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: isVertical
-              ? [...slotItems, collapseBtn]
-              : [collapseBtn, ...slotItems],
-        ),
-      );
-    } else {
-      final bool hasActiveImage = activePath != null && activePath.isNotEmpty;
-      final String label = hasActiveImage
-          ? (isVertical ? 'Шт.${activeSlot + 1}' : 'Штамп ${activeSlot + 1}')
-          : 'Штамп';
-
-      final mainButton = Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () {
-            if (hasActiveImage) {
-              drawBloc.add(SelectCustomStampSlotEvent(activeSlot));
-              widget.onToolSelected(ToolType.customStamp);
-            } else {
-              final firstFilled = slots.indexWhere((p) => p != null && p.isNotEmpty);
-              if (firstFilled != -1) {
-                drawBloc.add(SelectCustomStampSlotEvent(firstFilled));
-                widget.onToolSelected(ToolType.customStamp);
-              } else {
-                pickStampForSlot(0);
-              }
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  alignment: Alignment.center,
-                  child: hasActiveImage
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: buildStampThumbnail(activePath, width: 22, height: 22, iconSize: 20),
-                        )
-                      : const Icon(
-                          Icons.image_outlined,
-                          size: 20,
-                          color: Colors.white70,
-                        ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    drawBloc.add(DeleteCustomStampItemEvent(stamp.id));
+                  },
+                  icon: const Icon(Icons.delete_outline,
+                      color: Colors.redAccent, size: 16),
+                  label: const Text('Удалить',
+                      style: TextStyle(color: Colors.redAccent)),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: isVertical ? 9 : 10,
-                    color: isAnySubToolActive ? Colors.white : Colors.white70,
-                    fontWeight: isAnySubToolActive ? FontWeight.bold : FontWeight.normal,
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Colors.white,
                   ),
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    if (currentGroupId != stamp.groupId) {
+                      drawBloc.add(UpdateCustomStampGroupEvent(
+                        id: stamp.id,
+                        newGroupId: currentGroupId,
+                      ));
+                    }
+                  },
+                  child: const Text('Сохранить'),
                 ),
               ],
-            ),
-          ),
-        ),
-      );
-
-      final expandTrigger = Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _isCustomStampSubMenuOpen = true),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: isVertical ? 12.0 : 2.0,
-              vertical: isVertical ? 2.0 : 12.0,
-            ),
-            child: Icon(
-              isVertical
-                  ? Icons.keyboard_arrow_down
-                  : Icons.keyboard_arrow_right,
-              size: 16,
-              color: isAnySubToolActive ? Colors.white : Colors.white70,
-            ),
-          ),
-        ),
-      );
-
-      return Container(
-        decoration: BoxDecoration(
-          color: isAnySubToolActive
-              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
-              : Colors.white.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isAnySubToolActive
-                ? Theme.of(context).colorScheme.primary
-                : Colors.white.withValues(alpha: 0.1),
-            width: 1.0,
-          ),
-        ),
-        child: Flex(
-          direction: isVertical ? Axis.vertical : Axis.horizontal,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            mainButton,
-            Container(
-              height: isVertical ? 1.0 : 28.0,
-              width: isVertical ? 28.0 : 1.0,
-              color: Colors.white.withValues(alpha: 0.15),
-            ),
-            expandTrigger,
-          ],
-        ),
-      );
-    }
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildToolButton(
@@ -1166,6 +1057,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     bool? isSelectedOverride,
     bool? isDashedForce,
     VoidCallback? onTapOverride,
+    VoidCallback? onLongPress,
+    String? customStampPath,
   }) {
     final isSelected = isSelectedOverride ?? (widget.currentTool == tool);
     final primaryColor = Theme.of(context).colorScheme.primary;
@@ -1175,63 +1068,66 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         horizontal: isVertical ? 0.0 : 2.0,
         vertical: isVertical ? 2.0 : 0.0,
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12.0),
-          onTap: onTapOverride ?? () => widget.onToolSelected(tool),
-          child: Container(
-            width: 58,
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? (customColor ?? primaryColor).withValues(alpha: 0.2)
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: isSelected
-                        ? Border.all(
-                            color: customColor ?? primaryColor,
-                            width: 2.0,
-                          )
-                        : null,
-                  ),
-                  child: Center(
-                    child: _ToolIconPreview(
-                      tool: tool,
-                      color:
-                          customColor ??
-                          (isSelected
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.8)),
-                      isDashed:
-                          isDashedForce ??
-                          (tool == ToolType.arrow &&
-                              context.read<DrawBloc>().state.currentLineDashed),
+      child: _RightTooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12.0),
+            onTap: onTapOverride ?? () => widget.onToolSelected(tool),
+            onLongPress: onLongPress,
+            child: Container(
+              width: 58,
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? (customColor ?? primaryColor).withValues(alpha: 0.2)
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? Border.all(
+                              color: customColor ?? primaryColor,
+                              width: 2.0,
+                            )
+                          : null,
+                    ),
+                    child: Center(
+                      child: _ToolIconPreview(
+                        tool: tool,
+                        color: customColor ??
+                            (isSelected
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.8)),
+                        isDashed: isDashedForce ??
+                            (tool == ToolType.arrow &&
+                                context.read<DrawBloc>().state.currentLineDashed),
+                        customStampPath: customStampPath,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 9.0,
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: isSelected
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.7),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9.0,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: isSelected
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: 0.7),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2083,31 +1979,17 @@ class SettingsBubble extends StatelessWidget {
   }
 }
 
-class _SubToolData {
-  final ToolType tool;
-  final String label;
-  final String tooltip;
-  final IconData icon;
-  final Color color;
-
-  _SubToolData({
-    required this.tool,
-    required this.label,
-    required this.tooltip,
-    required this.icon,
-    required this.color,
-  });
-}
-
 class _ToolIconPreview extends StatelessWidget {
   final ToolType tool;
   final Color color;
   final bool isDashed;
+  final String? customStampPath;
 
   const _ToolIconPreview({
     required this.tool,
     required this.color,
     this.isDashed = false,
+    this.customStampPath,
   });
 
   @override
@@ -2219,6 +2101,17 @@ class _ToolIconPreview extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      );
+    }
+    if (customStampPath != null && customStampPath!.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: _FloatingToolboxState.buildStampThumbnail(
+          customStampPath!,
+          width: 22,
+          height: 22,
+          iconSize: 18,
         ),
       );
     }

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui';
+import '../../data/services/custom_stamps_service.dart';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 import 'draw_state.dart';
@@ -182,4 +183,39 @@ class SetEraserTargetEvent extends DrawEvent {
 
 class ResetProjectEvent extends DrawEvent {}
 
+// ── События группировок кастомных штампов (v2) ───────────────────────────
 
+class AddCustomStampItemEvent extends DrawEvent {
+  final String name;
+  final String groupId;
+  final String? sourceFilePath;
+  final Uint8List? bytes;
+
+  AddCustomStampItemEvent({
+    required this.name,
+    required this.groupId,
+    this.sourceFilePath,
+    this.bytes,
+  });
+}
+
+class DeleteCustomStampItemEvent extends DrawEvent {
+  final String id;
+  DeleteCustomStampItemEvent(this.id);
+}
+
+class SelectCustomStampItemEvent extends DrawEvent {
+  final CustomStampItem item;
+  SelectCustomStampItemEvent(this.item);
+}
+
+class UpdateCustomStampGroupEvent extends DrawEvent {
+  final String id;
+  final String newGroupId;
+  UpdateCustomStampGroupEvent({required this.id, required this.newGroupId});
+}
+
+class CreateCustomGroupEvent extends DrawEvent {
+  final String groupName;
+  CreateCustomGroupEvent(this.groupName);
+}

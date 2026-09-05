@@ -234,6 +234,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         final service = _customStampsService ?? await CustomStampsService.create();
         _customStampsService = service;
         final slots = await service.loadSlots();
+        final items = await service.loadCustomStamps();
+        final groups = await service.loadCustomGroups();
         final activeIndex = service.getActiveSlotIndex();
         final activePath = (activeIndex >= 0 && activeIndex < slots.length) ? slots[activeIndex] : null;
         emit(state.copyWith(
@@ -241,9 +243,90 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           activeStampSlotIndex: activeIndex,
           customStampPath: activePath,
           customStamps: slots.whereType<String>().toList(),
+          customStampItems: items,
+          customGroups: groups,
         ));
       } catch (e) {
         debugPrint('DrawBloc: Error loading custom stamps: $e');
+      }
+    });
+
+    on<AddCustomStampItemEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        final savedItem = await service.addCustomStamp(
+          name: event.name,
+          groupId: event.groupId,
+          sourceFilePath: event.sourceFilePath,
+          bytes: event.bytes,
+        );
+        if (savedItem != null) {
+          final updatedItems = await service.loadCustomStamps();
+          final updatedSlots = await service.loadSlots();
+          final updatedGroups = await service.loadCustomGroups();
+          emit(state.copyWith(
+            customStampItems: updatedItems,
+            customStampSlots: updatedSlots,
+            customGroups: updatedGroups,
+            activeStampItem: savedItem,
+            customStampPath: savedItem.imagePath,
+            currentTool: ToolType.customStamp,
+            currentStrokeWidth: 3.0,
+          ));
+        }
+      } catch (e) {
+        debugPrint('DrawBloc: Error adding custom stamp item: $e');
+      }
+    });
+
+    on<DeleteCustomStampItemEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        await service.deleteCustomStamp(event.id);
+        final updatedItems = await service.loadCustomStamps();
+        final bool wasActive = state.activeStampItem?.id == event.id;
+        emit(state.copyWith(
+          customStampItems: updatedItems,
+          clearActiveStampItem: wasActive,
+          customStampPath: wasActive ? null : state.customStampPath,
+        ));
+      } catch (e) {
+        debugPrint('DrawBloc: Error deleting custom stamp item: $e');
+      }
+    });
+
+    on<SelectCustomStampItemEvent>((event, emit) {
+      emit(state.copyWith(
+        activeStampItem: event.item,
+        customStampPath: event.item.imagePath,
+        currentTool: ToolType.customStamp,
+        currentStrokeWidth: 3.0,
+      ));
+    });
+
+    on<UpdateCustomStampGroupEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        await service.updateCustomStampGroup(event.id, event.newGroupId);
+        final updatedItems = await service.loadCustomStamps();
+        emit(state.copyWith(customStampItems: updatedItems));
+      } catch (e) {
+        debugPrint('DrawBloc: Error updating custom stamp group: $e');
+      }
+    });
+
+    on<CreateCustomGroupEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        await service.addCustomGroup(event.groupName);
+        final updatedGroups = await service.loadCustomGroups();
+        emit(state.copyWith(customGroups: updatedGroups));
+      } catch (e) {
+        debugPrint('DrawBloc: Error creating custom group: $e');
       }
     });
 

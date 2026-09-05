@@ -1,7 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
-- **Version**: 1.0.21 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
+- **Version**: 1.0.22 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x (Material 3)
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform medical drawing and annotation application designed for ultrasound (УЗИ) physicians, gynecologists, and surgeons. It functions as a medical scheme annotator, allowing clinicians to mark up standardized anatomical templates (pelvis, sagittal, uterus, abdominal wall, laparoscopic view) or imported scans with clinical pathology markers (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps, Indian Headdress/ГУИ). It features full off-screen rendering for export, interactive PDF report generation with printable medical forms, Cyrillic font support, user custom stamps, clinic/doctor presets, multi-page canvases, and 100% offline client-side execution.
 - **Key Dependencies**:
@@ -85,7 +85,7 @@
 - **Run Web App Locally**: `flutter run -d chrome`
 - **Build Production Web Target**: `flutter build web`
 - **Build Production Android Target**: `flutter build apk`
-- **Run Automated Test Suites**: `flutter test` (46/46 tests passing in [test/](file:///d:/projects/med_scheme/test))
+- **Run Automated Test Suites**: `flutter test` (52/52 tests passing in [test/](file:///d:/projects/med_scheme/test))
 - **Static Lint Analysis**: `flutter analyze` (0 issues)
 - **Format Code**: `dart format .`
 - **Vercel Deploy Pipeline**: `.\deploy.ps1` (PowerShell script compiling web release and deploying to Vercel).
@@ -108,9 +108,10 @@
 ---
 
 ## 6. Active Development Context
-- **Current Version**: 1.0.21
-- **Current Status**: All 7 development stages completed (114/114 tasks in [TASK_TRACKER.md](file:///d:/projects/med_scheme/TASK_TRACKER.md)). Multi-canvas workflow, clinical markers, custom stamp slots, clinic/doctor presets, and Cyrillic PDF reports fully tested and verified. 46/46 unit/widget tests passing.
+- **Current Version**: 1.0.22
+- **Current Status**: All 7 development stages completed (114/114 tasks in [TASK_TRACKER.md](file:///d:/projects/med_scheme/TASK_TRACKER.md)). Multi-canvas workflow, clinical markers, custom stamp slots, clinic/doctor presets, and Cyrillic PDF reports fully tested and verified. 52/52 unit/widget tests passing.
 - **Recent Git Commits & Updates**:
+  - `d3ce124` — Fix (v1.0.22) - Canvas geometry & selection bounds improvements
   - `ba91462` — Fix Cyrillic fonts rendering in web PDF reports (v1.0.21)
   - `7cc2835` — изменения интерфейса (v1.0.20)
   - `83b5e64` — исправление работы ластика (v1.0.19)

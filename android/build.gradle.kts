@@ -26,6 +26,7 @@ tasks.register<Delete>("clean") {
 subprojects {
     plugins.withId("com.android.library") {
         configure<com.android.build.gradle.LibraryExtension> {
+            compileSdk = 34
             if (namespace.isNullOrEmpty()) {
                 namespace = "com.example.${project.name}"
             }
@@ -47,6 +48,23 @@ subprojects {
                 }
             } catch (e: Exception) {
                 logger.warn("Failed to strip package from ${project.name}: $e")
+            }
+        }
+    }
+
+    if (project.name != "app") {
+        val applyLibraryConfig = {
+            plugins.withId("com.android.library") {
+                configure<com.android.build.gradle.LibraryExtension> {
+                    compileSdk = 34
+                }
+            }
+        }
+        if (state.executed) {
+            applyLibraryConfig()
+        } else {
+            afterEvaluate {
+                applyLibraryConfig()
             }
         }
     }

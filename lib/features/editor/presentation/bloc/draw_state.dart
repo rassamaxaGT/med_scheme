@@ -1,4 +1,5 @@
 import 'dart:ui';
+import '../../data/services/custom_stamps_service.dart';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
 
@@ -24,6 +25,9 @@ class DrawState {
   final int activeStampSlotIndex;
   final String? customStampPath;
   final List<String> customStamps;
+  final List<CustomStampItem> customStampItems;
+  final List<String> customGroups;
+  final CustomStampItem? activeStampItem;
   final List<CustomSchemeItem> customSchemes;
   final EraserTarget eraserTarget;
 
@@ -40,6 +44,9 @@ class DrawState {
     this.activeStampSlotIndex = 0,
     this.customStampPath,
     required this.customStamps,
+    this.customStampItems = const [],
+    this.customGroups = const [],
+    this.activeStampItem,
     this.customSchemes = const [],
     this.eraserTarget = EraserTarget.annotationsOnly,
   });
@@ -86,6 +93,9 @@ class DrawState {
       activeStampSlotIndex: 0,
       customStampPath: null,
       customStamps: const [],
+      customStampItems: const [],
+      customGroups: const [],
+      activeStampItem: null,
       eraserTarget: EraserTarget.annotationsOnly,
     );
   }
@@ -109,6 +119,10 @@ class DrawState {
     int? activeStampSlotIndex,
     String? customStampPath,
     List<String>? customStamps,
+    List<CustomStampItem>? customStampItems,
+    List<String>? customGroups,
+    CustomStampItem? activeStampItem,
+    bool clearActiveStampItem = false,
     List<CustomSchemeItem>? customSchemes,
     EraserTarget? eraserTarget,
   }) {
@@ -165,6 +179,9 @@ class DrawState {
       activeStampSlotIndex: effectiveSlotIndex,
       customStampPath: effectiveCustomStampPath,
       customStamps: effectiveCustomStamps,
+      customStampItems: customStampItems ?? this.customStampItems,
+      customGroups: customGroups ?? this.customGroups,
+      activeStampItem: clearActiveStampItem ? null : (activeStampItem ?? this.activeStampItem),
       customSchemes: customSchemes ?? this.customSchemes,
       eraserTarget: eraserTarget ?? this.eraserTarget,
     );
