@@ -1,6 +1,7 @@
 import 'dart:io' show File, Platform;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -22,7 +23,23 @@ class PdfReportGeneratorImpl {
   Future<pw.ThemeData> _loadTheme() async {
     if (_cachedTheme != null) return _cachedTheme!;
 
-    // 1. Мгновенная загрузка системных шрифтов ОС (0 мс, офлайн)
+    // 1. Встроенные шрифты из assets приложения (Web, Windows, Android, iOS - оффлайн, мгновенно, с гарантией кириллицы)
+    try {
+      final regData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      final boldData = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+      final italicData = await rootBundle.load('assets/fonts/Roboto-Italic.ttf');
+
+      _cachedTheme = pw.ThemeData.withFont(
+        base: pw.Font.ttf(regData),
+        bold: pw.Font.ttf(boldData),
+        italic: pw.Font.ttf(italicData),
+      );
+      return _cachedTheme!;
+    } catch (e) {
+      debugPrint('[PdfReportGeneratorImpl] Не удалось загрузить шрифт из assets: $e');
+    }
+
+    // 2. Мгновенная загрузка системных шрифтов ОС (0 мс, офлайн)
     if (!kIsWeb) {
       try {
         if (Platform.isWindows) {
@@ -113,13 +130,13 @@ class PdfReportGeneratorImpl {
       }
     }
 
-    // 2. Попытка загрузить Google Fonts с коротким таймаутом (500мс)
+    // 3. Загрузка Google Fonts (резервный онлайн-вариант)
     try {
       final results = await Future.wait([
         PdfGoogleFonts.robotoRegular(),
         PdfGoogleFonts.robotoBold(),
         PdfGoogleFonts.robotoItalic(),
-      ]).timeout(const Duration(milliseconds: 500));
+      ]).timeout(const Duration(seconds: 4));
 
       _cachedTheme = pw.ThemeData.withFont(
         base: results[0],
@@ -128,7 +145,7 @@ class PdfReportGeneratorImpl {
       );
       return _cachedTheme!;
     } catch (_) {
-      // 3. Мгновенный fallback
+      // 4. Аварийный fallback (без кириллицы)
       _cachedTheme = pw.ThemeData.withFont(
         base: pw.Font.helvetica(),
         bold: pw.Font.helveticaBold(),
