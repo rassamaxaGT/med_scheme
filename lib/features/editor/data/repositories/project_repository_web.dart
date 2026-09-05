@@ -395,8 +395,9 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
   Future<Uint8List> generateReportPdf({
     required ProjectData project,
     required ReportConfig config,
+    bool isForPreview = false,
   }) async {
-    return _pdfGenerator.generatePdf(project: project, config: config);
+    return _pdfGenerator.generatePdf(project: project, config: config, isForPreview: isForPreview);
   }
 
   @override

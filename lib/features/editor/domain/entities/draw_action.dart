@@ -7,14 +7,17 @@ enum ToolType {
   adhesions,    // паутина (спайки)
   fibrosis,     // кисть фиброза
   endometrioma, // овал (шоколадный)
-  myoma,        // круг
-  iud,          // штамп-спираль (ВМС)
+  myoma,        // условное обозначение миомы (круг/овал)
+  myomaStamp,   // штамп миомы (PNG)
+  iud,          // условное обозначение ВМС (Т-образный штамп)
+  iudStamp,     // штамп Мирена / ВМС (PNG)
   foci,         // штамп-пятно (очаги)
   arrow,        // стрелка с текстом
   customStamp,  // пользовательский штамп из PNG
   move,         // перемещение нарисованных объектов
   // Новые инструменты
-  bowelInfiltrate,  // штамп инфильтрата кишки (PNG)
+  bowelInfiltrate,  // штамп инфильтрата кишки (PNG infiltrat.png)
+  infiltrateStamp2, // штамп инфильтрата 2 (PNG infiltrat2.png)
   bowelInfiltrate2, // прежний инфильтрат кишки (дуга с фестонами)
   gui,
   follicle,

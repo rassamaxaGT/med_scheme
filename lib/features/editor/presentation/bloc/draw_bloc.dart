@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
+import '../../data/services/custom_stamps_service.dart';
 import 'draw_event.dart';
 import 'draw_state.dart';
 
@@ -15,7 +16,11 @@ List<List<DrawAction>> _limited(List<List<DrawAction>> stack) {
 }
 
 class DrawBloc extends Bloc<DrawEvent, DrawState> {
-  DrawBloc() : super(DrawState.initial()) {
+  CustomStampsService? _customStampsService;
+
+  DrawBloc([CustomStampsService? customStampsService]) : super(DrawState.initial()) {
+    _customStampsService = customStampsService;
+
     // ── Добавить действие ──────────────────────────────────────────────────
     on<AddActionEvent>((event, emit) {
       final updatedHistory = List<DrawAction>.from(state.history)..add(event.action);
@@ -143,19 +148,27 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
     on<SelectToolEvent>((event, emit) {
       final defaultColor = _getColorForTool(event.tool, state.currentFigoType);
       double strokeWidth = state.currentStrokeWidth;
-      if (event.tool == ToolType.fibrosis) {
+      if (event.tool == ToolType.eraser) {
+        strokeWidth = 15.0;
+      } else if (event.tool == ToolType.fibrosis) {
+        strokeWidth = 3.0;
+      } else if (event.tool == ToolType.adhesions) {
         strokeWidth = 2.0;
       } else if (event.tool == ToolType.arrow) {
         strokeWidth = 1.5;
       } else if (event.tool == ToolType.spray) {
         strokeWidth = 16.0;
+      } else if (event.tool == ToolType.bowelInfiltrate ||
+          event.tool == ToolType.infiltrateStamp2 ||
+          event.tool == ToolType.myomaStamp ||
+          event.tool == ToolType.iud ||
+          event.tool == ToolType.iudStamp ||
+          event.tool == ToolType.polyp ||
+          event.tool == ToolType.customStamp) {
+        strokeWidth = 3.0;
       } else if (event.tool == ToolType.foci ||
           event.tool == ToolType.follicle ||
-          event.tool == ToolType.polyp ||
-          event.tool == ToolType.gui ||
-          event.tool == ToolType.customStamp ||
-          event.tool == ToolType.iud ||
-          event.tool == ToolType.bowelInfiltrate) {
+          event.tool == ToolType.gui) {
         strokeWidth = 8.0;
       }
       emit(state.copyWith(
@@ -216,23 +229,115 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       emit(state.copyWith(currentLineDashed: event.isDashed));
     });
 
-    on<ImportCustomStampEvent>((event, emit) {
-      final updatedStamps = List<String>.from(state.customStamps);
-      if (!updatedStamps.contains(event.path)) {
-        updatedStamps.add(event.path);
+    on<LoadCustomStampsEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        final slots = await service.loadSlots();
+        final activeIndex = service.getActiveSlotIndex();
+        final activePath = (activeIndex >= 0 && activeIndex < slots.length) ? slots[activeIndex] : null;
+        emit(state.copyWith(
+          customStampSlots: slots,
+          activeStampSlotIndex: activeIndex,
+          customStampPath: activePath,
+          customStamps: slots.whereType<String>().toList(),
+        ));
+      } catch (e) {
+        debugPrint('DrawBloc: Error loading custom stamps: $e');
       }
-      emit(state.copyWith(
-        customStamps: updatedStamps,
-        customStampPath: event.path,
-        currentTool: ToolType.customStamp,
-      ));
+    });
+
+    on<AssignCustomStampSlotEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        final savedPath = await service.saveStampToSlot(
+          event.slotIndex,
+          sourceFilePath: event.sourceFilePath,
+          bytes: event.bytes,
+        );
+        if (savedPath != null) {
+          final updatedSlots = List<String?>.from(state.customStampSlots);
+          if (event.slotIndex >= 0 && event.slotIndex < updatedSlots.length) {
+            updatedSlots[event.slotIndex] = savedPath;
+          }
+          emit(state.copyWith(
+            customStampSlots: updatedSlots,
+            activeStampSlotIndex: event.slotIndex,
+            customStampPath: savedPath,
+            customStamps: updatedSlots.whereType<String>().toList(),
+            currentTool: ToolType.customStamp,
+            currentStrokeWidth: 3.0,
+          ));
+        }
+      } catch (e) {
+        debugPrint('DrawBloc: Error assigning custom stamp slot: $e');
+      }
+    });
+
+    on<SelectCustomStampSlotEvent>((event, emit) async {
+      final slots = state.customStampSlots;
+      if (event.slotIndex >= 0 && event.slotIndex < slots.length) {
+        final path = slots[event.slotIndex];
+        try {
+          final service = _customStampsService ?? await CustomStampsService.create();
+          _customStampsService = service;
+          await service.setActiveSlotIndex(event.slotIndex);
+        } catch (_) {}
+        emit(state.copyWith(
+          activeStampSlotIndex: event.slotIndex,
+          customStampPath: path,
+          currentTool: ToolType.customStamp,
+          currentStrokeWidth: 3.0,
+        ));
+      }
+    });
+
+    on<ClearCustomStampSlotEvent>((event, emit) async {
+      try {
+        final service = _customStampsService ?? await CustomStampsService.create();
+        _customStampsService = service;
+        await service.clearSlot(event.slotIndex);
+        final updatedSlots = List<String?>.from(state.customStampSlots);
+        if (event.slotIndex >= 0 && event.slotIndex < updatedSlots.length) {
+          updatedSlots[event.slotIndex] = null;
+        }
+        final currentActive = state.activeStampSlotIndex;
+        final newActivePath = (currentActive >= 0 && currentActive < updatedSlots.length)
+            ? updatedSlots[currentActive]
+            : null;
+        emit(state.copyWith(
+          customStampSlots: updatedSlots,
+          customStampPath: newActivePath,
+          customStamps: updatedSlots.whereType<String>().toList(),
+        ));
+      } catch (e) {
+        debugPrint('DrawBloc: Error clearing custom stamp slot: $e');
+      }
+    });
+
+    on<ImportCustomStampEvent>((event, emit) async {
+      // Ищем первый пустой слот или используем активный
+      int targetSlot = state.activeStampSlotIndex;
+      final slots = state.customStampSlots;
+      final emptyIndex = slots.indexOf(null);
+      if (emptyIndex != -1) {
+        targetSlot = emptyIndex;
+      }
+      add(AssignCustomStampSlotEvent(slotIndex: targetSlot, sourceFilePath: event.path));
     });
 
     on<SelectCustomStampEvent>((event, emit) {
-      emit(state.copyWith(
-        customStampPath: event.path,
-        currentTool: ToolType.customStamp,
-      ));
+      final index = state.customStampSlots.indexOf(event.path);
+      if (index != -1) {
+        add(SelectCustomStampSlotEvent(index));
+      } else {
+        emit(state.copyWith(
+          customStampPath: event.path,
+          currentTool: ToolType.customStamp,
+          currentStrokeWidth: 3.0,
+        ));
+      }
     });
 
     // ── Тихое обновление истории (используется ластиком, без undoStack) ───
@@ -304,7 +409,7 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
       final defaultBgPaths = event.backgroundPath != null
           ? [event.backgroundPath!]
           : (event.pageType == 'pelvis'
-              ? ['assets/schemes/standart_endo.jpg']
+              ? ['assets/schemes/ls_view.png']
               : (event.pageType == 'uterus'
                   ? ['assets/schemes/uretus.png']
                   : (event.pageType == 'abdominal_wall'
@@ -339,6 +444,8 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         currentPageIndex: newIndex,
       ));
     });
+
+    add(LoadCustomStampsEvent());
   }
 
   Color? _getColorForTool(ToolType tool, String figoType) {
@@ -353,17 +460,21 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
         return const Color(0xFFFF69B4); // Fuchsia / Pink
       case ToolType.foci:
         return const Color(0xFF880E4F); // Cherry / Вишневый
+      case ToolType.fibrosis:
       case ToolType.iud:
+      case ToolType.iudStamp:
       case ToolType.arrow:
         return const Color(0xFF000000); // Black
       case ToolType.bowelInfiltrate:
+      case ToolType.infiltrateStamp2:
       case ToolType.bowelInfiltrate2:
         return const Color(0xFF5C4033); // Brown
       case ToolType.gui:
         return const Color(0xFF8E24AA); // Purple
       case ToolType.follicle:
-      case ToolType.cyst:
         return const Color(0xFF03A9F4); // Light Blue / Cyan
+      case ToolType.cyst:
+        return const Color(0xFFFFD600); // Насыщенно-желтый
       case ToolType.adenomyosis:
         return const Color(0xFF880E4F); // Cherry
       case ToolType.polyp:

@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../../data/services/custom_stamps_service.dart';
 import '../../../domain/entities/draw_action.dart';
 import '../../bloc/draw_bloc.dart';
 import '../../bloc/draw_event.dart';
@@ -36,6 +40,50 @@ class FloatingToolbox extends StatefulWidget {
 
 class _FloatingToolboxState extends State<FloatingToolbox> {
   bool _isInfiltrateSubMenuOpen = false;
+  bool _isMyomaSubMenuOpen = false;
+  bool _isIudSubMenuOpen = false;
+  bool _isCustomStampSubMenuOpen = false;
+
+  static Widget buildStampThumbnail(
+    String path, {
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.contain,
+    double iconSize = 20,
+  }) {
+    if (path.startsWith('data:image')) {
+      try {
+        final commaIndex = path.indexOf(',');
+        final base64Data = commaIndex != -1 ? path.substring(commaIndex + 1) : path;
+        final bytes = base64Decode(base64Data);
+        return Image.memory(
+          bytes,
+          width: width,
+          height: height,
+          fit: fit,
+          errorBuilder: (_, _, _) => Icon(Icons.broken_image, size: iconSize, color: Colors.white54),
+        );
+      } catch (_) {
+        return Icon(Icons.broken_image, size: iconSize, color: Colors.white54);
+      }
+    } else if (kIsWeb) {
+      return Image.network(
+        path,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, _, _) => Icon(Icons.broken_image, size: iconSize, color: Colors.white54),
+      );
+    } else {
+      return Image.file(
+        File(path),
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (_, _, _) => Icon(Icons.broken_image, size: iconSize, color: Colors.white54),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,27 +214,11 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                         isVertical: isVertical,
                       ),
 
-                      // 5. Миома
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.myoma,
-                        label: 'Миома',
-                        tooltip: 'Миома (розовая/фуксия)',
-                        icon: Icons.circle_outlined,
-                        customColor: const Color(0xFFFF69B4), // Pink/Fuchsia
-                        isVertical: isVertical,
-                      ),
+                      // 5. Миома (группа: условное обозначение + штамп)
+                      _buildMyomaMenu(context, isVertical),
 
-                      // 6. ВМС
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.iud,
-                        label: 'ВМС',
-                        tooltip: 'ВМС (спираль)',
-                        icon: Icons.webhook,
-                        customColor: const Color(0xFF000000), // Black
-                        isVertical: isVertical,
-                      ),
+                      // 6. ВМС (группа: условное обозначение + штамп Мирена)
+                      _buildIudMenu(context, isVertical),
 
                       // 7. Очаг
                       _buildToolButton(
@@ -220,8 +252,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                         tooltip: 'Киста (измеряемая по размеру, без заливки)',
                         icon: Icons.panorama_fish_eye,
                         customColor: const Color(
-                          0xFF03A9F4,
-                        ), // Light Blue / Cyan
+                          0xFFFFD600,
+                        ), // Saturated Yellow
                         isVertical: isVertical,
                       ),
 
@@ -247,15 +279,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
                         isVertical: isVertical,
                       ),
 
-                      // 11. PNG Штамп
-                      _buildToolButton(
-                        context,
-                        tool: ToolType.customStamp,
-                        label: 'Штамп',
-                        tooltip: 'Пользовательский штамп (PNG)',
-                        icon: Icons.image_outlined,
-                        isVertical: isVertical,
-                      ),
+                      // 11. PNG Штамп (подменю с 4 слотами)
+                      _buildCustomStampMenu(context, isVertical),
 
                       // 12. Линия расстояния (dashed)
                       _buildToolButton(
@@ -342,6 +367,7 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     final isAnySubToolActive =
         activeTool == ToolType.infiltrate ||
         activeTool == ToolType.bowelInfiltrate ||
+        activeTool == ToolType.infiltrateStamp2 ||
         activeTool == ToolType.bowelInfiltrate2 ||
         activeTool == ToolType.gui;
 
@@ -357,6 +383,13 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         tool: ToolType.bowelInfiltrate,
         label: 'Инф. кишки',
         tooltip: 'Инфильтрат кишки (штамп)',
+        icon: Icons.waves,
+        color: const Color(0xFF5C4033),
+      ),
+      _SubToolData(
+        tool: ToolType.infiltrateStamp2,
+        label: 'Штамп 2',
+        tooltip: 'Инфильтрат (штамп 2)',
         icon: Icons.waves,
         color: const Color(0xFF5C4033),
       ),
@@ -384,9 +417,11 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           label: isVertical
               ? (data.tool == ToolType.bowelInfiltrate
                     ? 'Инф.киш'
-                    : (data.tool == ToolType.bowelInfiltrate2
-                          ? 'Инф. 2'
-                          : data.label))
+                    : (data.tool == ToolType.infiltrateStamp2
+                          ? 'Штамп 2'
+                          : (data.tool == ToolType.bowelInfiltrate2
+                              ? 'Инф. 2'
+                              : data.label)))
               : data.label,
           tooltip: data.tooltip,
           icon: data.icon,
@@ -445,9 +480,11 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         label: isVertical
             ? (defaultData.tool == ToolType.bowelInfiltrate
                   ? 'Инф.киш'
-                  : (defaultData.tool == ToolType.bowelInfiltrate2
-                        ? 'Инф. 2'
-                        : defaultData.label))
+                  : (defaultData.tool == ToolType.infiltrateStamp2
+                        ? 'Штамп 2'
+                        : (defaultData.tool == ToolType.bowelInfiltrate2
+                              ? 'Инф. 2'
+                              : defaultData.label)))
             : defaultData.label,
         tooltip: defaultData.tooltip,
         icon: defaultData.icon,
@@ -485,6 +522,618 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           border: Border.all(
             color: isAnySubToolActive
                 ? defaultData.color
+                : Colors.white.withValues(alpha: 0.1),
+            width: 1.0,
+          ),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            mainButton,
+            Container(
+              height: isVertical ? 1.0 : 28.0,
+              width: isVertical ? 28.0 : 1.0,
+              color: Colors.white.withValues(alpha: 0.15),
+            ),
+            expandTrigger,
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildMyomaMenu(BuildContext context, bool isVertical) {
+    final activeTool = widget.currentTool;
+    final isAnySubToolActive =
+        activeTool == ToolType.myoma || activeTool == ToolType.myomaStamp;
+
+    final subTools = [
+      _SubToolData(
+        tool: ToolType.myoma,
+        label: 'Миома',
+        tooltip: 'Миома (условное обозначение)',
+        icon: Icons.circle_outlined,
+        color: const Color(0xFFFF69B4),
+      ),
+      _SubToolData(
+        tool: ToolType.myomaStamp,
+        label: 'Штамп',
+        tooltip: 'Миома (штамп PNG)',
+        icon: Icons.circle,
+        color: const Color(0xFFFF69B4),
+      ),
+    ];
+
+    if (_isMyomaSubMenuOpen) {
+      final items = subTools.map((data) {
+        return _buildToolButton(
+          context,
+          tool: data.tool,
+          label: isVertical
+              ? (data.tool == ToolType.myomaStamp ? 'Штамп' : 'Миома')
+              : data.label,
+          tooltip: data.tooltip,
+          icon: data.icon,
+          customColor: data.color,
+          isVertical: isVertical,
+          onTapOverride: () {
+            widget.onToolSelected(data.tool);
+            setState(() {
+              _isMyomaSubMenuOpen = false;
+            });
+          },
+        );
+      }).toList();
+
+      final collapseBtn = GestureDetector(
+        onTap: () => setState(() => _isMyomaSubMenuOpen = false),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: const BoxDecoration(
+            color: Colors.white10,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
+            size: 14,
+            color: Colors.white70,
+          ),
+        ),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: isVertical
+              ? [...items, collapseBtn]
+              : [collapseBtn, ...items],
+        ),
+      );
+    } else {
+      final defaultData = subTools.firstWhere(
+        (t) => t.tool == activeTool,
+        orElse: () => subTools.first,
+      );
+
+      final mainButton = _buildToolButton(
+        context,
+        tool: defaultData.tool,
+        label: isVertical
+            ? (defaultData.tool == ToolType.myomaStamp ? 'Штамп' : 'Миома')
+            : defaultData.label,
+        tooltip: defaultData.tooltip,
+        icon: defaultData.icon,
+        customColor: defaultData.color,
+        isVertical: isVertical,
+      );
+
+      final expandTrigger = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _isMyomaSubMenuOpen = true),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isVertical ? 12.0 : 2.0,
+              vertical: isVertical ? 2.0 : 12.0,
+            ),
+            child: Icon(
+              isVertical
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_right,
+              size: 16,
+              color: isAnySubToolActive ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      );
+
+      return Container(
+        decoration: BoxDecoration(
+          color: isAnySubToolActive
+              ? (defaultData.color).withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isAnySubToolActive
+                ? defaultData.color
+                : Colors.white.withValues(alpha: 0.1),
+            width: 1.0,
+          ),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            mainButton,
+            Container(
+              height: isVertical ? 1.0 : 28.0,
+              width: isVertical ? 28.0 : 1.0,
+              color: Colors.white.withValues(alpha: 0.15),
+            ),
+            expandTrigger,
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildIudMenu(BuildContext context, bool isVertical) {
+    final activeTool = widget.currentTool;
+    final isAnySubToolActive =
+        activeTool == ToolType.iud || activeTool == ToolType.iudStamp;
+
+    final subTools = [
+      _SubToolData(
+        tool: ToolType.iud,
+        label: 'ВМС',
+        tooltip: 'ВМС (условное обозначение)',
+        icon: Icons.webhook,
+        color: const Color(0xFF000000),
+      ),
+      _SubToolData(
+        tool: ToolType.iudStamp,
+        label: 'Мирена',
+        tooltip: 'Мирена (штамп PNG)',
+        icon: Icons.straighten,
+        color: const Color(0xFF000000),
+      ),
+    ];
+
+    if (_isIudSubMenuOpen) {
+      final items = subTools.map((data) {
+        return _buildToolButton(
+          context,
+          tool: data.tool,
+          label: isVertical
+              ? (data.tool == ToolType.iudStamp ? 'Мирена' : 'ВМС')
+              : data.label,
+          tooltip: data.tooltip,
+          icon: data.icon,
+          customColor: data.color,
+          isVertical: isVertical,
+          onTapOverride: () {
+            widget.onToolSelected(data.tool);
+            setState(() {
+              _isIudSubMenuOpen = false;
+            });
+          },
+        );
+      }).toList();
+
+      final collapseBtn = GestureDetector(
+        onTap: () => setState(() => _isIudSubMenuOpen = false),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: const BoxDecoration(
+            color: Colors.white10,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
+            size: 14,
+            color: Colors.white70,
+          ),
+        ),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: isVertical
+              ? [...items, collapseBtn]
+              : [collapseBtn, ...items],
+        ),
+      );
+    } else {
+      final defaultData = subTools.firstWhere(
+        (t) => t.tool == activeTool,
+        orElse: () => subTools.first,
+      );
+
+      final mainButton = _buildToolButton(
+        context,
+        tool: defaultData.tool,
+        label: isVertical
+            ? (defaultData.tool == ToolType.iudStamp ? 'Мирена' : 'ВМС')
+            : defaultData.label,
+        tooltip: defaultData.tooltip,
+        icon: defaultData.icon,
+        customColor: defaultData.color,
+        isVertical: isVertical,
+      );
+
+      final expandTrigger = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _isIudSubMenuOpen = true),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isVertical ? 12.0 : 2.0,
+              vertical: isVertical ? 2.0 : 12.0,
+            ),
+            child: Icon(
+              isVertical
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_right,
+              size: 16,
+              color: isAnySubToolActive ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      );
+
+      return Container(
+        decoration: BoxDecoration(
+          color: isAnySubToolActive
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isAnySubToolActive
+                ? Colors.white70
+                : Colors.white.withValues(alpha: 0.1),
+            width: 1.0,
+          ),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            mainButton,
+            Container(
+              height: isVertical ? 1.0 : 28.0,
+              width: isVertical ? 28.0 : 1.0,
+              color: Colors.white.withValues(alpha: 0.15),
+            ),
+            expandTrigger,
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildCustomStampMenu(BuildContext context, bool isVertical) {
+    final drawBloc = context.read<DrawBloc>();
+    final drawState = drawBloc.state;
+    final activeTool = widget.currentTool;
+    final bool isAnySubToolActive = activeTool == ToolType.customStamp;
+
+    final slots = drawState.customStampSlots;
+    final activeSlot = drawState.activeStampSlotIndex;
+    final activePath = drawState.customStampPath;
+
+    Future<void> pickStampForSlot(int slotIndex) async {
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['png'],
+          withData: true,
+        );
+        if (result != null && result.files.isNotEmpty) {
+          final file = result.files.single;
+          final bytes = file.bytes;
+          final p = kIsWeb ? null : file.path;
+          if (kIsWeb) {
+            if (bytes != null) {
+              drawBloc.add(AssignCustomStampSlotEvent(
+                slotIndex: slotIndex,
+                bytes: bytes,
+              ));
+              widget.onToolSelected(ToolType.customStamp);
+            }
+          } else {
+            if (p != null || bytes != null) {
+              drawBloc.add(AssignCustomStampSlotEvent(
+                slotIndex: slotIndex,
+                sourceFilePath: p,
+                bytes: bytes,
+              ));
+              widget.onToolSelected(ToolType.customStamp);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Ошибка выбора PNG-штампа: $e');
+      }
+    }
+
+    void showSlotOptions(int slotIndex, String currentPath) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF22272E),
+          title: Text(
+            'Слот ${slotIndex + 1}',
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: buildStampThumbnail(currentPath, height: 80, iconSize: 48),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Вы хотите заменить изображение или очистить этот слот?',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                drawBloc.add(ClearCustomStampSlotEvent(slotIndex));
+              },
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 16),
+              label: const Text('Очистить слот', style: TextStyle(color: Colors.redAccent)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                pickStampForSlot(slotIndex);
+              },
+              icon: const Icon(Icons.upload_file, size: 16),
+              label: const Text('Заменить PNG'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isCustomStampSubMenuOpen) {
+      final List<Widget> slotItems = [];
+      for (int i = 0; i < CustomStampsService.slotCount; i++) {
+        final path = (i < slots.length) ? slots[i] : null;
+        final bool isSlotSelected = isAnySubToolActive && activeSlot == i && path != null;
+
+        if (path == null) {
+          final emptyBtn = _RightTooltip(
+            message: 'Слот ${i + 1} (пусто, нажмите для загрузки PNG)',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => pickStampForSlot(i),
+                child: Container(
+                  width: isVertical ? 44 : 36,
+                  height: isVertical ? 44 : 36,
+                  margin: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white24,
+                      style: BorderStyle.solid,
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.add, size: 14, color: Colors.white70),
+                      Text(
+                        '${i + 1}',
+                        style: const TextStyle(fontSize: 9, color: Colors.white54, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          slotItems.add(emptyBtn);
+        } else {
+          final filledBtn = _RightTooltip(
+            message: 'Штамп ${i + 1} (долгий клик — настройки)',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  drawBloc.add(SelectCustomStampSlotEvent(i));
+                  widget.onToolSelected(ToolType.customStamp);
+                  setState(() {
+                    _isCustomStampSubMenuOpen = false;
+                  });
+                },
+                onLongPress: () => showSlotOptions(i, path),
+                child: Container(
+                  width: isVertical ? 44 : 36,
+                  height: isVertical ? 44 : 36,
+                  margin: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: isSlotSelected
+                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
+                        : Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSlotSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.white30,
+                      width: isSlotSelected ? 2.0 : 1.0,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(3.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: buildStampThumbnail(path, fit: BoxFit.contain, iconSize: 16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          slotItems.add(filledBtn);
+        }
+      }
+
+      final collapseBtn = GestureDetector(
+        onTap: () => setState(() => _isCustomStampSubMenuOpen = false),
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: const BoxDecoration(
+            color: Colors.white10,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isVertical ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_left,
+            size: 14,
+            color: Colors.white70,
+          ),
+        ),
+      );
+
+      return Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Flex(
+          direction: isVertical ? Axis.vertical : Axis.horizontal,
+          mainAxisSize: MainAxisSize.min,
+          children: isVertical
+              ? [...slotItems, collapseBtn]
+              : [collapseBtn, ...slotItems],
+        ),
+      );
+    } else {
+      final bool hasActiveImage = activePath != null && activePath.isNotEmpty;
+      final String label = hasActiveImage
+          ? (isVertical ? 'Шт.${activeSlot + 1}' : 'Штамп ${activeSlot + 1}')
+          : 'Штамп';
+
+      final mainButton = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            if (hasActiveImage) {
+              drawBloc.add(SelectCustomStampSlotEvent(activeSlot));
+              widget.onToolSelected(ToolType.customStamp);
+            } else {
+              final firstFilled = slots.indexWhere((p) => p != null && p.isNotEmpty);
+              if (firstFilled != -1) {
+                drawBloc.add(SelectCustomStampSlotEvent(firstFilled));
+                widget.onToolSelected(ToolType.customStamp);
+              } else {
+                pickStampForSlot(0);
+              }
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  child: hasActiveImage
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: buildStampThumbnail(activePath, width: 22, height: 22, iconSize: 20),
+                        )
+                      : const Icon(
+                          Icons.image_outlined,
+                          size: 20,
+                          color: Colors.white70,
+                        ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: isVertical ? 9 : 10,
+                    color: isAnySubToolActive ? Colors.white : Colors.white70,
+                    fontWeight: isAnySubToolActive ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final expandTrigger = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _isCustomStampSubMenuOpen = true),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isVertical ? 12.0 : 2.0,
+              vertical: isVertical ? 2.0 : 12.0,
+            ),
+            child: Icon(
+              isVertical
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_right,
+              size: 16,
+              color: isAnySubToolActive ? Colors.white : Colors.white70,
+            ),
+          ),
+        ),
+      );
+
+      return Container(
+        decoration: BoxDecoration(
+          color: isAnySubToolActive
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isAnySubToolActive
+                ? Theme.of(context).colorScheme.primary
                 : Colors.white.withValues(alpha: 0.1),
             width: 1.0,
           ),
@@ -733,140 +1382,91 @@ class SettingsBubble extends StatelessWidget {
   Widget _buildCustomStampsSelector(BuildContext context, bool isVertical) {
     final drawBloc = context.read<DrawBloc>();
     final state = drawBloc.state;
-    final stamps = state.customStamps;
-    final activePath = state.customStampPath;
+    final activeSlot = state.activeStampSlotIndex;
+    final path = (activeSlot >= 0 && activeSlot < state.customStampSlots.length)
+        ? state.customStampSlots[activeSlot]
+        : null;
 
     Future<void> pickStamp() async {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['png'],
-      );
-      if (result != null && result.files.single.path != null) {
-        drawBloc.add(ImportCustomStampEvent(result.files.single.path!));
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['png'],
+          withData: true,
+        );
+        if (result != null && result.files.isNotEmpty) {
+          final file = result.files.single;
+          final bytes = file.bytes;
+          final p = kIsWeb ? null : file.path;
+          if (kIsWeb) {
+            if (bytes != null) {
+              drawBloc.add(AssignCustomStampSlotEvent(
+                slotIndex: activeSlot,
+                bytes: bytes,
+              ));
+            }
+          } else {
+            if (p != null || bytes != null) {
+              drawBloc.add(AssignCustomStampSlotEvent(
+                slotIndex: activeSlot,
+                sourceFilePath: p,
+                bytes: bytes,
+              ));
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Ошибка выбора PNG-штампа: $e');
       }
     }
 
+    if (path == null || path.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     final children = <Widget>[
-      isVertical
-          ? _RightTooltip(
-              message: 'Загрузить PNG штамп',
-              child: InkWell(
-                onTap: pickStamp,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 16),
-                ),
-              ),
-            )
-          : ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: const Icon(Icons.add, size: 14),
-              label: const Text(
-                'Загрузить PNG',
-                style: TextStyle(fontSize: 11),
-              ),
-              onPressed: pickStamp,
-            ),
-      if (stamps.isNotEmpty) ...[
-        SizedBox(width: isVertical ? 0 : 8, height: isVertical ? 8 : 0),
-        ...stamps.map((path) {
-          final isSelected = activePath == path;
-          final filename = path.split(RegExp(r'[/\\]')).last;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
-            child: isVertical
-                ? _RightTooltip(
-                    message: filename,
-                    child: GestureDetector(
-                      onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected ? Colors.white : Colors.white24,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.image,
-                          size: 16,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: () => drawBloc.add(SelectCustomStampEvent(path)),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isSelected ? Colors.white : Colors.white24,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.image,
-                            size: 12,
-                            color: Colors.white70,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            filename.length > 10
-                                ? '${filename.substring(0, 8)}..'
-                                : filename,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-          );
-        }),
-      ] else ...[
-        SizedBox(width: isVertical ? 0 : 8, height: isVertical ? 8 : 0),
-        Text(
-          isVertical ? 'Нет' : 'Загрузите PNG штампы',
-          style: const TextStyle(
-            fontSize: 10,
-            color: Colors.white38,
-            fontStyle: FontStyle.italic,
-          ),
+      Text(
+        'Слот ${activeSlot + 1}',
+        style: TextStyle(
+          fontSize: isVertical ? 10 : 11,
+          color: Colors.white70,
+          fontWeight: FontWeight.bold,
         ),
-      ],
+      ),
+      const SizedBox(width: 8, height: 6),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: _FloatingToolboxState.buildStampThumbnail(
+          path,
+          width: 28,
+          height: 28,
+          iconSize: 20,
+        ),
+      ),
+      const SizedBox(width: 8, height: 6),
+      _RightTooltip(
+        message: 'Заменить файл в слоте ${activeSlot + 1}',
+        child: IconButton(
+          icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+          onPressed: pickStamp,
+          tooltip: 'Заменить PNG',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      ),
+      const SizedBox(width: 8, height: 6),
+      _RightTooltip(
+        message: 'Очистить слот ${activeSlot + 1}',
+        child: IconButton(
+          icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+          onPressed: () => drawBloc.add(ClearCustomStampSlotEvent(activeSlot)),
+          tooltip: 'Очистить',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      ),
     ];
 
     return isVertical
@@ -1039,11 +1639,17 @@ class SettingsBubble extends StatelessWidget {
     final List<Color> colors;
     if (currentTool == ToolType.myoma) {
       colors = [
-        const Color(0xFFFF00FF), // Fuchsia
-        const Color(0xFFFF69B4), // Pink
-        const Color(0xFF1976D2), // Blue
-        const Color(0xFF388E3C), // Green
-        const Color(0xFF757575), // Grey
+        const Color(0xFFFF69B4), // Розовый
+        const Color(0xFFFF00FF), // Фуксия
+        const Color(0xFF757575), // Серый
+        const Color(0xFF000000), // Черный
+      ];
+    } else if (currentTool == ToolType.cyst) {
+      colors = [
+        const Color(0xFFFFD600), // Насыщенно-желтый
+        const Color(0xFF757575), // Серый
+        const Color(0xFF000000), // Черный
+        const Color(0xFFD32F2F), // Красный
       ];
     } else {
       colors = [
@@ -1080,7 +1686,8 @@ class SettingsBubble extends StatelessWidget {
       );
     }).toList();
 
-    final showAdvanced = currentTool != ToolType.myoma;
+    final showAdvanced =
+        currentTool != ToolType.myoma && currentTool != ToolType.cyst;
     final advancedBtn = showAdvanced
         ? GestureDetector(
             onTap: () => _openAdvancedColorPicker(context),
@@ -1114,7 +1721,13 @@ class SettingsBubble extends StatelessWidget {
     bool isVertical,
     bool showColor,
   ) {
-    final bool showSliderPreview = currentTool != ToolType.bowelInfiltrate;
+    final bool showSliderPreview = currentTool != ToolType.bowelInfiltrate &&
+        currentTool != ToolType.infiltrateStamp2 &&
+        currentTool != ToolType.polyp &&
+        currentTool != ToolType.customStamp &&
+        currentTool != ToolType.myomaStamp &&
+        currentTool != ToolType.iud &&
+        currentTool != ToolType.iudStamp;
 
     final preview = Container(
       width: 24,
@@ -1133,12 +1746,15 @@ class SettingsBubble extends StatelessWidget {
     final labelText = currentTool == ToolType.spray
         ? 'Конус: ${currentStrokeWidth.round()} px'
         : (currentTool == ToolType.iud ||
+              currentTool == ToolType.iudStamp ||
               currentTool == ToolType.foci ||
               currentTool == ToolType.follicle ||
               currentTool == ToolType.polyp ||
               currentTool == ToolType.gui ||
               currentTool == ToolType.customStamp ||
-              currentTool == ToolType.bowelInfiltrate)
+              currentTool == ToolType.bowelInfiltrate ||
+              currentTool == ToolType.infiltrateStamp2 ||
+              currentTool == ToolType.myomaStamp)
         ? 'Размер: ${currentStrokeWidth.round()}'
         : '${currentStrokeWidth.round()} px';
 
@@ -1158,12 +1774,34 @@ class SettingsBubble extends StatelessWidget {
 
     final maxStrokeWidth = currentTool == ToolType.eraser
         ? 80.0
-        : (currentTool == ToolType.spray ? 60.0 : 20.0);
+        : (currentTool == ToolType.spray
+            ? 60.0
+            : ((currentTool == ToolType.bowelInfiltrate ||
+                    currentTool == ToolType.infiltrateStamp2 ||
+                    currentTool == ToolType.polyp ||
+                    currentTool == ToolType.customStamp ||
+                    currentTool == ToolType.myomaStamp ||
+                    currentTool == ToolType.iud ||
+                    currentTool == ToolType.iudStamp ||
+                    currentTool == ToolType.fibrosis)
+                ? 6.0
+                : 20.0));
     final minStrokeWidth = currentTool == ToolType.spray ? 4.0 : 1.0;
+    final int? divisions = (currentTool == ToolType.bowelInfiltrate ||
+            currentTool == ToolType.infiltrateStamp2 ||
+            currentTool == ToolType.polyp ||
+            currentTool == ToolType.customStamp ||
+            currentTool == ToolType.myomaStamp ||
+            currentTool == ToolType.iud ||
+            currentTool == ToolType.iudStamp ||
+            currentTool == ToolType.fibrosis)
+        ? 5
+        : null;
 
     final slider = Slider(
       min: minStrokeWidth,
       max: maxStrokeWidth,
+      divisions: divisions,
       value: currentStrokeWidth.clamp(minStrokeWidth, maxStrokeWidth),
       onChanged: onThicknessChanged,
     );
@@ -1346,6 +1984,12 @@ class SettingsBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final customStampPath = context.watch<DrawBloc>().state.customStampPath;
+    if (currentTool == ToolType.customStamp &&
+        (customStampPath == null || customStampPath.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
     final bool showColor =
         currentTool == ToolType.pencil ||
         currentTool == ToolType.adhesions ||
@@ -1364,15 +2008,22 @@ class SettingsBubble extends StatelessWidget {
         currentTool == ToolType.eraser ||
         currentTool == ToolType.foci ||
         currentTool == ToolType.iud ||
-        currentTool == ToolType.customStamp ||
+        (currentTool == ToolType.customStamp &&
+            customStampPath != null &&
+            customStampPath.isNotEmpty) ||
         currentTool == ToolType.gui ||
         currentTool == ToolType.follicle ||
         currentTool == ToolType.cyst ||
         currentTool == ToolType.adenomyosis ||
         currentTool == ToolType.polyp ||
-        currentTool == ToolType.bowelInfiltrate;
+        currentTool == ToolType.bowelInfiltrate ||
+        currentTool == ToolType.infiltrateStamp2 ||
+        currentTool == ToolType.myomaStamp ||
+        currentTool == ToolType.iudStamp;
 
-    final bool showCustomStamps = currentTool == ToolType.customStamp;
+    final bool showCustomStamps = currentTool == ToolType.customStamp &&
+        customStampPath != null &&
+        customStampPath.isNotEmpty;
     final bool isVertical = orientation != ToolboxOrientation.horizontal;
 
     // Fix #13: строим единый список дочерних виджетов,
@@ -1482,6 +2133,108 @@ class _ToolIconPreview extends StatelessWidget {
           ),
         ),
       );
+    }
+    if (tool == ToolType.myomaStamp) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          'assets/images/myoma.png',
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => SizedBox(
+            width: 22,
+            height: 22,
+            child: CustomPaint(
+              painter: _ToolIconPainter(
+                tool: tool,
+                color: color,
+                isDashed: isDashed,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (tool == ToolType.iudStamp) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          'assets/images/mirena.png',
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => SizedBox(
+            width: 22,
+            height: 22,
+            child: CustomPaint(
+              painter: _ToolIconPainter(
+                tool: tool,
+                color: color,
+                isDashed: isDashed,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (tool == ToolType.infiltrateStamp2) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          'assets/images/infiltrat2.png',
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => SizedBox(
+            width: 22,
+            height: 22,
+            child: CustomPaint(
+              painter: _ToolIconPainter(
+                tool: tool,
+                color: color,
+                isDashed: isDashed,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (tool == ToolType.polyp) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.asset(
+          'assets/images/polyp.png',
+          width: 22,
+          height: 22,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => SizedBox(
+            width: 22,
+            height: 22,
+            child: CustomPaint(
+              painter: _ToolIconPainter(
+                tool: tool,
+                color: color,
+                isDashed: isDashed,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (tool == ToolType.customStamp) {
+      final state = context.read<DrawBloc>().state;
+      if (state.customStampPath != null && state.customStampPath!.isNotEmpty) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: _FloatingToolboxState.buildStampThumbnail(
+            state.customStampPath!,
+            width: 22,
+            height: 22,
+            iconSize: 18,
+          ),
+        );
+      }
     }
     return SizedBox(
       width: 22,
@@ -1596,8 +2349,30 @@ class _ToolIconPainter extends CustomPainter {
         canvas.drawCircle(center, radius - 1, ring);
         break;
 
+      case ToolType.myomaStamp:
+        final fillStamp = Paint()
+          ..color = const Color(0xFFFF69B4).withValues(alpha: 0.5)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(center, radius, fillStamp);
+        break;
+
       case ToolType.iud:
         // ВМС: Т-образная спираль
+        final paint = Paint()
+          ..color = Colors.white
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+
+        canvas.drawLine(const Offset(4, 4), Offset(size.width - 4, 4), paint);
+        canvas.drawLine(
+          Offset(center.dx, 4),
+          Offset(center.dx, size.height - 3),
+          paint,
+        );
+        break;
+
+      case ToolType.iudStamp:
         final paint = Paint()
           ..color = Colors.white
           ..strokeWidth = 2.0
@@ -1635,9 +2410,9 @@ class _ToolIconPainter extends CustomPainter {
         break;
 
       case ToolType.cyst:
-        // Киста: измеряемый голубой эллиптический контур без заливки
+        // Киста: эллиптический контур без заливки (насыщенно-желтый / выбранный цвет)
         final ring = Paint()
-          ..color = const Color(0xFF03A9F4)
+          ..color = color
           ..strokeWidth = 2.0
           ..style = PaintingStyle.stroke;
         canvas.drawOval(
@@ -1746,6 +2521,7 @@ class _ToolIconPainter extends CustomPainter {
         break;
 
       case ToolType.bowelInfiltrate:
+      case ToolType.infiltrateStamp2:
         // Инфильтрат кишки (штамп PNG)
         final fillBowel = Paint()
           ..color = const Color(0xFF5C4033)

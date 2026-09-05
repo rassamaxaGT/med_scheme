@@ -20,6 +20,8 @@ class DrawState {
   @Deprecated('FIGO classification was removed in v2.0 specification')
   final String currentFigoType;
   final bool currentLineDashed;
+  final List<String?> customStampSlots;
+  final int activeStampSlotIndex;
   final String? customStampPath;
   final List<String> customStamps;
   final List<CustomSchemeItem> customSchemes;
@@ -34,6 +36,8 @@ class DrawState {
     required this.patientId,
     required this.currentFigoType,
     required this.currentLineDashed,
+    this.customStampSlots = const [null, null, null, null],
+    this.activeStampSlotIndex = 0,
     this.customStampPath,
     required this.customStamps,
     this.customSchemes = const [],
@@ -59,7 +63,7 @@ class DrawState {
         id: 'page_pelvis',
         pageType: 'pelvis',
         title: 'Таз',
-        backgroundPaths: const ['assets/schemes/standart_endo.jpg'],
+        backgroundPaths: const ['assets/schemes/ls_view.png'],
       ),
       PageData(
         id: 'page_uterus',
@@ -78,8 +82,10 @@ class DrawState {
       patientId: '',
       currentFigoType: '0',
       currentLineDashed: false,
+      customStampSlots: const [null, null, null, null],
+      activeStampSlotIndex: 0,
       customStampPath: null,
-      customStamps: [],
+      customStamps: const [],
       eraserTarget: EraserTarget.annotationsOnly,
     );
   }
@@ -99,6 +105,8 @@ class DrawState {
     String? patientId,
     String? currentFigoType,
     bool? currentLineDashed,
+    List<String?>? customStampSlots,
+    int? activeStampSlotIndex,
     String? customStampPath,
     List<String>? customStamps,
     List<CustomSchemeItem>? customSchemes,
@@ -136,6 +144,14 @@ class DrawState {
       );
     }
 
+    final effectiveSlots = customStampSlots ?? this.customStampSlots;
+    final effectiveSlotIndex = activeStampSlotIndex ?? this.activeStampSlotIndex;
+    final effectiveCustomStampPath = customStampPath ??
+        ((effectiveSlotIndex >= 0 && effectiveSlotIndex < effectiveSlots.length)
+            ? effectiveSlots[effectiveSlotIndex]
+            : this.customStampPath);
+    final effectiveCustomStamps = customStamps ?? effectiveSlots.whereType<String>().toList();
+
     return DrawState(
       pages: newPages,
       currentPageIndex: newPageIndex,
@@ -145,8 +161,10 @@ class DrawState {
       patientId: patientId ?? this.patientId,
       currentFigoType: currentFigoType ?? this.currentFigoType,
       currentLineDashed: currentLineDashed ?? this.currentLineDashed,
-      customStampPath: customStampPath ?? this.customStampPath,
-      customStamps: customStamps ?? this.customStamps,
+      customStampSlots: effectiveSlots,
+      activeStampSlotIndex: effectiveSlotIndex,
+      customStampPath: effectiveCustomStampPath,
+      customStamps: effectiveCustomStamps,
       customSchemes: customSchemes ?? this.customSchemes,
       eraserTarget: eraserTarget ?? this.eraserTarget,
     );

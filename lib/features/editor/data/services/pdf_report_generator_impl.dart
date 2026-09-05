@@ -53,23 +53,51 @@ class PdfReportGeneratorImpl {
             return _cachedTheme!;
           }
         } else if (Platform.isAndroid) {
-          const roboto = '/system/fonts/Roboto-Regular.ttf';
-          const robotoBd = '/system/fonts/Roboto-Bold.ttf';
-          const robotoIt = '/system/fonts/Roboto-Italic.ttf';
+          const candidateRegulars = [
+            '/system/fonts/Roboto-Regular.ttf',
+            '/apex/com.android.runtime/fonts/Roboto-Regular.ttf',
+            '/product/fonts/Roboto-Regular.ttf',
+            '/system/fonts/Roboto.ttf',
+          ];
+          const candidateBolds = [
+            '/system/fonts/Roboto-Bold.ttf',
+            '/apex/com.android.runtime/fonts/Roboto-Bold.ttf',
+            '/product/fonts/Roboto-Bold.ttf',
+          ];
+          const candidateItalics = [
+            '/system/fonts/Roboto-Italic.ttf',
+            '/apex/com.android.runtime/fonts/Roboto-Italic.ttf',
+            '/product/fonts/Roboto-Italic.ttf',
+          ];
 
-          if (File(roboto).existsSync()) {
-            final regBytes = await File(roboto).readAsBytes();
+          String? foundRegular;
+          for (final path in candidateRegulars) {
+            if (File(path).existsSync()) {
+              foundRegular = path;
+              break;
+            }
+          }
+
+          if (foundRegular != null) {
+            final regBytes = await File(foundRegular).readAsBytes();
             final regular = pw.Font.ttf(regBytes.buffer.asByteData());
             pw.Font? bold;
             pw.Font? italic;
 
-            if (File(robotoBd).existsSync()) {
-              final bdBytes = await File(robotoBd).readAsBytes();
-              bold = pw.Font.ttf(bdBytes.buffer.asByteData());
+            for (final path in candidateBolds) {
+              if (File(path).existsSync()) {
+                final bdBytes = await File(path).readAsBytes();
+                bold = pw.Font.ttf(bdBytes.buffer.asByteData());
+                break;
+              }
             }
-            if (File(robotoIt).existsSync()) {
-              final itBytes = await File(robotoIt).readAsBytes();
-              italic = pw.Font.ttf(itBytes.buffer.asByteData());
+
+            for (final path in candidateItalics) {
+              if (File(path).existsSync()) {
+                final itBytes = await File(path).readAsBytes();
+                italic = pw.Font.ttf(itBytes.buffer.asByteData());
+                break;
+              }
             }
 
             _cachedTheme = pw.ThemeData.withFont(
@@ -114,6 +142,7 @@ class PdfReportGeneratorImpl {
   Future<Uint8List> generatePdf({
     required ProjectData project,
     required ReportConfig config,
+    bool isForPreview = false,
   }) async {
     final pdf = pw.Document(
       theme: await _loadTheme(),
@@ -166,6 +195,7 @@ class PdfReportGeneratorImpl {
         page: page,
         dpiScale: config.dpiScale,
         patientId: config.patientId.isNotEmpty ? config.patientId : project.patientId,
+        isForPreview: isForPreview,
       );
       renderedImages.add(pngBytes);
     }
@@ -266,7 +296,7 @@ class PdfReportGeneratorImpl {
   }
 
   String _getSchemeTitle(String path) {
-    if (path.contains('standart_endo')) return 'Обзорная схема таза';
+    if (path.contains('ls_view') || path.contains('standart_endo')) return 'LS view';
     if (path.contains('sagittally')) return 'Сагиттальный срез';
     if (path.contains('uretus')) return 'Матка и придатки';
     if (path.contains('abdominal_wall')) return 'Брюшная стенка';
@@ -369,6 +399,26 @@ class PdfReportGeneratorImpl {
         ? config.patientId
         : (project.patientId?.isNotEmpty == true ? project.patientId! : 'Не указан');
 
+    final device = config.deviceModel.trim();
+    final probes = config.probes.trim();
+    String? equipmentText;
+    if (device.isNotEmpty && probes.isNotEmpty) {
+      final isMultipleProbes = probes.contains(',') || probes.contains(';') || probes.contains(' и ');
+      final probeWord = isMultipleProbes ? 'датчиков' : 'датчика';
+      equipmentText = 'Исследование выполнено на аппарате $device с использованием $probeWord $probes';
+    } else if (device.isNotEmpty) {
+      equipmentText = 'Исследование выполнено на аппарате $device';
+    } else if (probes.isNotEmpty) {
+      final isMultipleProbes = probes.contains(',') || probes.contains(';') || probes.contains(' и ');
+      final probeWord = isMultipleProbes ? 'датчиков' : 'датчика';
+      equipmentText = 'Использованы $probeWord: $probes';
+    }
+
+    final date = config.createdAt ?? DateTime.now();
+    final formattedDate =
+        '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year} '
+        '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 6),
       decoration: pw.BoxDecoration(
@@ -380,24 +430,32 @@ class PdfReportGeneratorImpl {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         crossAxisAlignment: pw.CrossAxisAlignment.end,
         children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                config.clinicName.isNotEmpty ? config.clinicName : 'МедРисунок — УЗИ Протокол',
-                style: pw.TextStyle(
-                  fontSize: 13,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColor.fromHex('0F4C81'),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  config.clinicName.isNotEmpty ? config.clinicName : 'МедРисунок — УЗИ Протокол',
+                  style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('0F4C81'),
+                  ),
                 ),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'Протокол: $pageTitle',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-              ),
-            ],
+                if (equipmentText != null) ...[
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    equipmentText,
+                    style: pw.TextStyle(
+                      fontSize: 8.5,
+                      color: PdfColor.fromHex('333333'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
+          pw.SizedBox(width: 12),
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.end,
             children: [
@@ -418,7 +476,7 @@ class PdfReportGeneratorImpl {
               ],
               pw.SizedBox(height: 2),
               pw.Text(
-                'Дата: ${DateTime.now().toLocal().toString().split('.')[0]}',
+                'Дата создания: $formattedDate',
                 style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
               ),
             ],

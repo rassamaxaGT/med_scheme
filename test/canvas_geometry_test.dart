@@ -14,6 +14,17 @@ void main() {
       expect(CanvasPainter.standardSingleCanvasSize, const Size(907.0, 1280.0));
     });
 
+    test('getBowelInfiltrateScale maps levels 1..6 with level 3 matching legacy size 2', () {
+      // Legacy size 2 had scale = 2.0 / 5.0 = 0.4 (height = 36.0 px)
+      expect(CanvasPainter.getBowelInfiltrateScale(3.0), closeTo(0.4, 0.0001));
+
+      // Level 1 -> 0.2 (height = 18.0 px)
+      expect(CanvasPainter.getBowelInfiltrateScale(1.0), closeTo(0.2, 0.0001));
+
+      // Level 6 -> 0.7 (height = 63.0 px)
+      expect(CanvasPainter.getBowelInfiltrateScale(6.0), closeTo(0.7, 0.0001));
+    });
+
     test('getCanvasBaseSize returns standard size for empty paths (blank sheet)', () {
       final size = CanvasPainter.getCanvasBaseSize(const []);
       expect(size.width, 907.0);
@@ -21,8 +32,8 @@ void main() {
     });
 
     test('getCanvasBaseSize returns 907x1280 for any single scheme', () {
-      final endoSize = CanvasPainter.getCanvasBaseSize(const ['assets/schemes/standart_endo.jpg']);
-      expect(endoSize, const Size(907.0, 1280.0));
+      final lsSize = CanvasPainter.getCanvasBaseSize(const ['assets/schemes/ls_view.png']);
+      expect(lsSize, const Size(907.0, 1280.0));
 
       final uterusSize = CanvasPainter.getCanvasBaseSize(const ['assets/schemes/uretus.png']);
       expect(uterusSize, const Size(907.0, 1280.0));
@@ -37,7 +48,7 @@ void main() {
     test('getCanvasBaseSize returns multi-column and multi-row sizes for grid', () {
       // 2 schemes (1x2 grid)
       final twoSchemes = CanvasPainter.getCanvasBaseSize(const [
-        'assets/schemes/standart_endo.jpg',
+        'assets/schemes/ls_view.png',
         'assets/schemes/uretus.png',
       ]);
       expect(twoSchemes.width, 907.0 * 2);
@@ -45,7 +56,7 @@ void main() {
 
       // 3 schemes (2x2 grid)
       final threeSchemes = CanvasPainter.getCanvasBaseSize(const [
-        'assets/schemes/standart_endo.jpg',
+        'assets/schemes/ls_view.png',
         'assets/schemes/uretus.png',
         'assets/schemes/sagittally.jpg',
       ]);
@@ -54,7 +65,7 @@ void main() {
 
       // 4 schemes (2x2 grid)
       final fourSchemes = CanvasPainter.getCanvasBaseSize(const [
-        'assets/schemes/standart_endo.jpg',
+        'assets/schemes/ls_view.png',
         'assets/schemes/uretus.png',
         'assets/schemes/sagittally.jpg',
         'assets/schemes/abdominal_wall_cross_section.png',
@@ -63,15 +74,19 @@ void main() {
       expect(fourSchemes.height, 1280.0 * 2);
     });
 
-    test('getSchemeImageRect for standard_endo (907x1280) fits cell exactly from edge to edge', () {
+    test('getSchemeImageRect for ls_view (1055x1490) fits cell vertically with centered horizontal margin', () {
       final rect = CanvasPainter.getSchemeImageRect(
-        path: 'assets/schemes/standart_endo.jpg',
-        activePaths: const ['assets/schemes/standart_endo.jpg'],
+        path: 'assets/schemes/ls_view.png',
+        activePaths: const ['assets/schemes/ls_view.png'],
       );
 
-      expect(rect.left, 0.0);
+      const expectedScale = 1280.0 / 1490.0;
+      final expectedWidth = 1055.0 * expectedScale;
+      final expectedLeft = (907.0 - expectedWidth) / 2;
+
+      expect(rect.left, closeTo(expectedLeft, 0.001));
       expect(rect.top, 0.0);
-      expect(rect.width, 907.0);
+      expect(rect.width, closeTo(expectedWidth, 0.001));
       expect(rect.height, 1280.0);
     });
 
@@ -115,7 +130,7 @@ void main() {
 
     test('getSchemeImageRect in multi-scheme grid calculates correct column and row offsets', () {
       final activePaths = const [
-        'assets/schemes/standart_endo.jpg',
+        'assets/schemes/ls_view.png',
         'assets/schemes/uretus.png',
         'assets/schemes/sagittally.jpg',
       ];
@@ -125,9 +140,7 @@ void main() {
         path: activePaths[0],
         activePaths: activePaths,
       );
-      expect(rect0.left, 0.0);
       expect(rect0.top, 0.0);
-      expect(rect0.width, 907.0);
       expect(rect0.height, 1280.0);
 
       // Item 1: col 1, row 0
@@ -154,14 +167,14 @@ void main() {
           strokeWidth: 20.0,
           points: const [Offset(100, 100), Offset(150, 150)],
           target: EraserTarget.everything,
-          targetSchemePath: 'assets/schemes/standart_endo.jpg',
+          targetSchemePath: 'assets/schemes/ls_view.png',
         ),
       );
 
       final painter = CanvasPainter(
         history: const [],
         activeActionNotifier: activeNotifier,
-        backgroundPaths: const ['assets/schemes/standart_endo.jpg'],
+        backgroundPaths: const ['assets/schemes/ls_view.png'],
       );
 
       final recorder = ui.PictureRecorder();

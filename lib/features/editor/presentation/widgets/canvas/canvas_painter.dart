@@ -55,7 +55,13 @@ class CanvasPainter extends CustomPainter {
     this.patientId,
   }) : _activeActionStatic = activeAction,
        // Когда передан notifier — painter слушает его и перерисовывается без setState
-       super(repaint: activeActionNotifier);
+       super(repaint: activeActionNotifier) {
+    if (stampImages.isNotEmpty) {
+      cachedStampImages.addAll(stampImages);
+    }
+  }
+
+  static final Map<String, ui.Image> cachedStampImages = {};
 
   static const double minSelectionDimension = 125.0;
   static const double standardCellWidth = 907.0;
@@ -66,8 +72,8 @@ class CanvasPainter extends CustomPainter {
     if (image != null && image.width > 0 && image.height > 0) {
       return Size(image.width.toDouble(), image.height.toDouble());
     }
-    if (path == 'assets/schemes/standart_endo.jpg') {
-      return const Size(907.0, 1280.0);
+    if (path == 'assets/schemes/ls_view.png' || path == 'assets/schemes/standart_endo.jpg') {
+      return const Size(1055.0, 1490.0);
     }
     if (path == 'assets/schemes/sagittally.jpg') {
       return const Size(800.0, 566.0);
@@ -84,6 +90,24 @@ class CanvasPainter extends CustomPainter {
   static double getSchemeAspectRatio(String path, [ui.Image? image]) {
     final size = getOriginalSchemeSize(path, image);
     return size.width / size.height;
+  }
+
+  /// Масштаб штампа инфильтрата кишки по шкале 1..6:
+  /// значение 3 соответствует прежнему размеру 2 (scale 0.4, высота 36 px)
+  static double getBowelInfiltrateScale(double strokeWidth) {
+    final double effectiveWidth = strokeWidth <= 6.0
+        ? (strokeWidth + 1.0) * 0.5
+        : strokeWidth / 4.0;
+    return effectiveWidth / 5.0;
+  }
+
+  /// Масштаб ВМС (условный знак и штамп Мирена) по шкале 1..6:
+  /// значение 3 соответствует размеру ~20 px (scale 2.5, высота 90 px)
+  static double getIudScale(double strokeWidth) {
+    if (strokeWidth <= 6.0) {
+      return strokeWidth * (20.0 / 24.0);
+    }
+    return strokeWidth / 8.0;
   }
 
   static double getSchemeScaleFactor(
@@ -169,7 +193,7 @@ class CanvasPainter extends CustomPainter {
   }
 
   static String getSchemeTitle(String path) {
-    if (path.contains('standart_endo')) return 'Эндометриоз — Исходник';
+    if (path.contains('ls_view') || path.contains('standart_endo')) return 'LS view';
     if (path.contains('sagittally')) return 'Сагиттально';
     if (path.contains('uterus') || path.contains('uretus')) return 'Матка';
     if (path.contains('abdominal_wall')) return 'Брюшная стенка';
@@ -628,7 +652,7 @@ class CanvasPainter extends CustomPainter {
     return action;
   }
 
-  static Rect getOriginalActionBounds(DrawAction action) {
+  static Rect getOriginalActionBounds(DrawAction action, [Map<String, ui.Image>? stampImages]) {
     if (action is StrokeAction) {
       if (action.points.isEmpty) return Rect.zero;
       double minX = action.points.first.dx;
@@ -648,7 +672,7 @@ class CanvasPainter extends CustomPainter {
       double w = 40.0;
       double h = 40.0;
       if (action.stampType == 'iud') {
-        final double scale = action.strokeWidth / 8.0;
+        final double scale = getIudScale(action.strokeWidth);
         w = 29.0 * scale;
         h = 36.0 * scale;
         return Rect.fromLTWH(
@@ -657,6 +681,12 @@ class CanvasPainter extends CustomPainter {
           w,
           h,
         ).inflate(8.0);
+      } else if (action.stampType == 'iudStamp' || action.customStampPath == 'assets/images/mirena.png') {
+        final double scale = getIudScale(action.strokeWidth);
+        final double height = 36.0 * scale;
+        final double width = height * (1216.0 / 1293.0);
+        w = width;
+        h = height;
       } else if (action.stampType == 'foci') {
         final radius = action.strokeWidth * 2;
         w = radius * 2;
@@ -669,20 +699,38 @@ class CanvasPainter extends CustomPainter {
         final size = action.strokeWidth * 2.5;
         w = size * 1.5;
         h = size * 1.5;
-      } else if (action.stampType == 'polyp') {
-        final size = action.strokeWidth * 2.0;
-        w = size * 1.2;
-        h = size * 1.8;
+      } else if (action.stampType == 'polyp' || action.customStampPath == 'assets/images/polyp.png') {
+        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height * (1001.0 / 1025.0);
+        w = width;
+        h = height;
       } else if (action.stampType == 'bowelInfiltrate' || action.customStampPath == 'assets/images/infiltrat.png') {
-        final double scale = action.strokeWidth / 5.0;
+        final double scale = getBowelInfiltrateScale(action.strokeWidth);
         final double height = 90.0 * scale;
         final double width = height * 2.0;
         w = width;
         h = height;
+      } else if (action.stampType == 'infiltrateStamp2' || action.customStampPath == 'assets/images/infiltrat2.png') {
+        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height * (1024.0 / 1024.0);
+        w = width;
+        h = height;
+      } else if (action.stampType == 'myomaStamp' || action.customStampPath == 'assets/images/myoma.png') {
+        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height * (1301.0 / 1209.0);
+        w = width;
+        h = height;
       } else if (action.stampType == 'custom') {
-        final double scale = action.strokeWidth / 5.0;
-        w = 50.0 * scale;
-        h = 50.0 * scale;
+        final double scale = getBowelInfiltrateScale(action.strokeWidth);
+        final images = stampImages ?? cachedStampImages;
+        final image = action.customStampPath != null ? images[action.customStampPath!] : null;
+        final double height = 90.0 * scale;
+        final double width = height * (image != null ? (image.width / image.height) : 1.0);
+        w = width;
+        h = height;
       }
       return Rect.fromCenter(
         center: action.position,
@@ -1775,7 +1823,7 @@ class CanvasPainter extends CustomPainter {
   void _drawStamp(Canvas canvas, StampAction stamp, [double schemeScaleFactor = 1.0]) {
     if (stamp.stampType == 'iud') {
       // Рисуем ВМС с масштабированием
-      final double scale = (stamp.strokeWidth / 8.0) * schemeScaleFactor;
+      final double scale = getIudScale(stamp.strokeWidth) * schemeScaleFactor;
       final double width = 29.0 * scale;
       final double height = 36.0 * scale;
 
@@ -1847,59 +1895,83 @@ class CanvasPainter extends CustomPainter {
         ..style = PaintingStyle.fill;
 
       _drawGuiShape(canvas, rect, fillPaint, strokePaint);
-    } else if (stamp.stampType == 'polyp') {
-      // Полип эндометрия (округлая капля на ножке со штриховкой, масштабируемый)
-      final center = stamp.position;
-      final double size = stamp.strokeWidth * 2.0 * schemeScaleFactor;
-
-      final paint = Paint()
-        ..color =
-            const Color(0xFFFF7043) // Peach
-        ..strokeWidth = 2.0 * schemeScaleFactor
-        ..style = PaintingStyle.stroke;
-
-      final fillPaint = Paint()
-        ..color = const Color(0xFFFF7043).withValues(alpha: 0.3)
-        ..style = PaintingStyle.fill;
-
-      // Ножка
-      canvas.drawLine(center, Offset(center.dx, center.dy - size * 0.8), paint);
-
-      // Головка
-      final headRect = Rect.fromCenter(
-        center: Offset(center.dx, center.dy - size * 1.3),
-        width: size * 1.2,
-        height: size * 1.0,
-      );
-      canvas.drawOval(headRect, fillPaint);
-      canvas.drawOval(headRect, paint);
-
-      // Внутренняя штриховка
-      final hatchPaint = Paint()
-        ..color = const Color(0xFFFF7043).withValues(alpha: 0.7)
-        ..strokeWidth = 1.0;
-
-      final double headCenterY = center.dy - size * 1.3;
-      canvas.drawLine(
-        Offset(center.dx - size * 0.3, headCenterY - size * 0.1),
-        Offset(center.dx + size * 0.3, headCenterY + size * 0.3),
-        hatchPaint,
-      );
-      canvas.drawLine(
-        Offset(center.dx - size * 0.4, headCenterY - size * 0.3),
-        Offset(center.dx + size * 0.2, headCenterY + size * 0.1),
-        hatchPaint,
-      );
-      canvas.drawLine(
-        Offset(center.dx - size * 0.2, headCenterY + size * 0.1),
-        Offset(center.dx + size * 0.4, headCenterY - size * 0.3),
-        hatchPaint,
-      );
+    } else if (stamp.stampType == 'polyp' || stamp.customStampPath == 'assets/images/polyp.png') {
+      final image = stampImages[stamp.customStampPath ?? 'assets/images/polyp.png'] ?? stampImages['assets/images/polyp.png'];
+      if (image != null) {
+        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double height = 90.0 * scale;
+        final double width = height * (image.width / image.height);
+        final rect = Rect.fromCenter(
+          center: stamp.position,
+          width: width,
+          height: height,
+        );
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+          rect,
+          Paint(),
+        );
+      }
     } else if (stamp.stampType == 'bowelInfiltrate' || stamp.customStampPath == 'assets/images/infiltrat.png') {
       final image = stampImages[stamp.customStampPath ?? 'assets/images/infiltrat.png'] ?? stampImages['assets/images/infiltrat.png'];
       if (image != null) {
-        final double scale = (stamp.strokeWidth / 5.0) * schemeScaleFactor;
+        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
         final double height = 90.0 * scale;
+        final double width = height * (image.width / image.height);
+        final rect = Rect.fromCenter(
+          center: stamp.position,
+          width: width,
+          height: height,
+        );
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+          rect,
+          Paint(),
+        );
+      }
+    } else if (stamp.stampType == 'infiltrateStamp2' || stamp.customStampPath == 'assets/images/infiltrat2.png') {
+      final image = stampImages[stamp.customStampPath ?? 'assets/images/infiltrat2.png'] ?? stampImages['assets/images/infiltrat2.png'];
+      if (image != null) {
+        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double height = 90.0 * scale;
+        final double width = height * (image.width / image.height);
+        final rect = Rect.fromCenter(
+          center: stamp.position,
+          width: width,
+          height: height,
+        );
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+          rect,
+          Paint(),
+        );
+      }
+    } else if (stamp.stampType == 'myomaStamp' || stamp.customStampPath == 'assets/images/myoma.png') {
+      final image = stampImages[stamp.customStampPath ?? 'assets/images/myoma.png'] ?? stampImages['assets/images/myoma.png'];
+      if (image != null) {
+        final double scale = getBowelInfiltrateScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double height = 90.0 * scale;
+        final double width = height * (image.width / image.height);
+        final rect = Rect.fromCenter(
+          center: stamp.position,
+          width: width,
+          height: height,
+        );
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+          rect,
+          Paint(),
+        );
+      }
+    } else if (stamp.stampType == 'iudStamp' || stamp.customStampPath == 'assets/images/mirena.png') {
+      final image = stampImages[stamp.customStampPath ?? 'assets/images/mirena.png'] ?? stampImages['assets/images/mirena.png'];
+      if (image != null) {
+        final double scale = getIudScale(stamp.strokeWidth) * schemeScaleFactor;
+        final double height = 36.0 * scale;
         final double width = height * (image.width / image.height);
         final rect = Rect.fromCenter(
           center: stamp.position,
@@ -1917,11 +1989,13 @@ class CanvasPainter extends CustomPainter {
       // Рисуем пользовательский PNG штамп
       final image = stampImages[stamp.customStampPath];
       if (image != null) {
-        final double size = 40.0 * schemeScaleFactor;
+        final double scale = getBowelInfiltrateScale(stamp.strokeWidth);
+        final double height = 90.0 * scale * schemeScaleFactor;
+        final double width = height * (image.width / image.height);
         final rect = Rect.fromCenter(
           center: stamp.position,
-          width: size,
-          height: size,
+          width: width,
+          height: height,
         );
         canvas.drawImageRect(
           image,

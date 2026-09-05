@@ -90,10 +90,13 @@ class DrawActionModel {
     final offsetX = (json['offsetX'] as num?)?.toDouble() ?? 0.0;
     final offsetY = (json['offsetY'] as num?)?.toDouble() ?? 0.0;
     final rawPath = json['targetSchemePath'] as String?;
-    final targetSchemePath =
+    var targetSchemePath =
         (rawPath != null && pathRemapping != null)
             ? (pathRemapping[rawPath] ?? rawPath)
             : rawPath;
+    if (targetSchemePath == 'assets/schemes/standart_endo.jpg') {
+      targetSchemePath = 'assets/schemes/ls_view.png';
+    }
 
     final rawMasks = json['eraserMasks'] as List?;
     final List<EraserMaskData>? eraserMasks = rawMasks?.map((m) {

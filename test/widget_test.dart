@@ -58,6 +58,7 @@ class FakeProjectRepository implements ProjectRepository {
   Future<Uint8List> generateReportPdf({
     required ProjectData project,
     required ReportConfig config,
+    bool isForPreview = false,
   }) async => Uint8List.fromList([0, 1, 2]);
 
   @override

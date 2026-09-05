@@ -42,6 +42,15 @@ class ReportConfig {
   /// Идентификатор или ФИО пациента
   final String patientId;
 
+  /// Модель или название УЗ-аппарата
+  final String deviceModel;
+
+  /// Используемые УЗ-датчики
+  final String probes;
+
+  /// Дата создания исследования
+  final DateTime? createdAt;
+
   /// Текст заключения / описания исследования
   final String doctorNotes;
 
@@ -58,12 +67,15 @@ class ReportConfig {
     this.orientation = PageOrientation.landscape,
     this.layoutMode = SchemeLayoutMode.allOnSinglePage,
     this.includeHeader = true,
-    this.includeLegend = true,
+    this.includeLegend = false,
     this.includeOnlyActiveMarkersInLegend = true,
-    this.includeDoctorNotes = true,
+    this.includeDoctorNotes = false,
     this.clinicName = 'Кабинет ультразвуковой диагностики',
     this.doctorName = '',
     this.patientId = '',
+    this.deviceModel = '',
+    this.probes = '',
+    this.createdAt,
     this.doctorNotes = '',
     this.selectedPageIds = const [],
     this.dpiScale = 2.0,
@@ -80,6 +92,9 @@ class ReportConfig {
     String? clinicName,
     String? doctorName,
     String? patientId,
+    String? deviceModel,
+    String? probes,
+    DateTime? createdAt,
     String? doctorNotes,
     List<String>? selectedPageIds,
     double? dpiScale,
@@ -97,6 +112,9 @@ class ReportConfig {
       clinicName: clinicName ?? this.clinicName,
       doctorName: doctorName ?? this.doctorName,
       patientId: patientId ?? this.patientId,
+      deviceModel: deviceModel ?? this.deviceModel,
+      probes: probes ?? this.probes,
+      createdAt: createdAt ?? this.createdAt,
       doctorNotes: doctorNotes ?? this.doctorNotes,
       selectedPageIds: selectedPageIds ?? this.selectedPageIds,
       dpiScale: dpiScale ?? this.dpiScale,

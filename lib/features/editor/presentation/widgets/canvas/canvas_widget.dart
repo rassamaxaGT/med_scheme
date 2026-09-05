@@ -216,6 +216,46 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           );
         }
 
+        // Также грузим 'assets/images/myoma.png' для штампа миомы
+        if (!_stampImages.containsKey('assets/images/myoma.png')) {
+          _stampImages['assets/images/myoma.png'] = null as dynamic;
+          Future.microtask(
+            () => _loadCustomStampImage('assets/images/myoma.png'),
+          );
+        }
+
+        // Также грузим 'assets/images/mirena.png' для штампа Мирена (ВМС)
+        if (!_stampImages.containsKey('assets/images/mirena.png')) {
+          _stampImages['assets/images/mirena.png'] = null as dynamic;
+          Future.microtask(
+            () => _loadCustomStampImage('assets/images/mirena.png'),
+          );
+        }
+
+        // Также грузим 'assets/images/infiltrat2.png' для второго штампа инфильтрата
+        if (!_stampImages.containsKey('assets/images/infiltrat2.png')) {
+          _stampImages['assets/images/infiltrat2.png'] = null as dynamic;
+          Future.microtask(
+            () => _loadCustomStampImage('assets/images/infiltrat2.png'),
+          );
+        }
+
+        // Также грузим 'assets/images/polyp.png' для штампа полипа
+        if (!_stampImages.containsKey('assets/images/polyp.png')) {
+          _stampImages['assets/images/polyp.png'] = null as dynamic;
+          Future.microtask(
+            () => _loadCustomStampImage('assets/images/polyp.png'),
+          );
+        }
+
+        // Также грузим все кастомные штампы из слотов
+        for (final slotPath in state.customStampSlots) {
+          if (slotPath != null && !_stampImages.containsKey(slotPath)) {
+            _stampImages[slotPath] = null as dynamic;
+            Future.microtask(() => _loadCustomStampImage(slotPath));
+          }
+        }
+
         // Также грузим текущий выбранный кастомный штамп
         if (state.customStampPath != null &&
             !_stampImages.containsKey(state.customStampPath!)) {
@@ -263,10 +303,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                 final bool needsHover =
                     activeState.currentTool == ToolType.eraser ||
                     activeState.currentTool == ToolType.iud ||
+                    activeState.currentTool == ToolType.iudStamp ||
                     activeState.currentTool == ToolType.follicle ||
                     activeState.currentTool == ToolType.polyp ||
                     activeState.currentTool == ToolType.foci ||
-                    activeState.currentTool == ToolType.bowelInfiltrate;
+                    activeState.currentTool == ToolType.bowelInfiltrate ||
+                    activeState.currentTool == ToolType.infiltrateStamp2 ||
+                    activeState.currentTool == ToolType.myomaStamp ||
+                    (activeState.currentTool == ToolType.customStamp &&
+                        activeState.customStampPath != null);
                 if (needsHover) {
                   _hoverCursorNotifier.value = event.localPosition;
                 } else {
@@ -327,10 +372,15 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
                         final bool isGhostTool =
                             state.currentTool == ToolType.iud ||
+                            state.currentTool == ToolType.iudStamp ||
                             state.currentTool == ToolType.follicle ||
                             state.currentTool == ToolType.polyp ||
                             state.currentTool == ToolType.foci ||
-                            state.currentTool == ToolType.bowelInfiltrate;
+                            state.currentTool == ToolType.bowelInfiltrate ||
+                            state.currentTool == ToolType.infiltrateStamp2 ||
+                            state.currentTool == ToolType.myomaStamp ||
+                            (state.currentTool == ToolType.customStamp &&
+                                state.customStampPath != null);
 
                         if (isGhostTool) {
                           return _buildGhostCursor(state, hoverPos);
@@ -1322,11 +1372,14 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           targetSchemePath: targetPath,
         );
       } else if (state.currentTool == ToolType.iud ||
+          state.currentTool == ToolType.iudStamp ||
           state.currentTool == ToolType.foci ||
           state.currentTool == ToolType.customStamp ||
           state.currentTool == ToolType.follicle ||
           state.currentTool == ToolType.polyp ||
-          state.currentTool == ToolType.bowelInfiltrate) {
+          state.currentTool == ToolType.bowelInfiltrate ||
+          state.currentTool == ToolType.infiltrateStamp2 ||
+          state.currentTool == ToolType.myomaStamp) {
         // Штампы срабатывают мгновенно при нажатии
         if (state.currentTool == ToolType.customStamp &&
             state.customStampPath == null) {
@@ -1337,22 +1390,36 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           color: state.currentColor,
           strokeWidth: state.currentStrokeWidth,
           position: localPosition,
-          stampType: state.currentTool == ToolType.bowelInfiltrate
-              ? 'bowelInfiltrate'
-              : (state.currentTool == ToolType.customStamp
-                    ? 'custom'
-                    : state.currentTool == ToolType.iud
-                    ? 'iud'
-                    : state.currentTool == ToolType.foci
-                    ? 'foci'
-                    : state.currentTool == ToolType.follicle
-                    ? 'follicle'
-                    : 'polyp'),
-          customStampPath: state.currentTool == ToolType.bowelInfiltrate
-              ? 'assets/images/infiltrat.png'
-              : (state.currentTool == ToolType.customStamp
-                    ? state.customStampPath
-                    : null),
+          stampType: state.currentTool == ToolType.iudStamp
+              ? 'iudStamp'
+              : (state.currentTool == ToolType.myomaStamp
+                  ? 'myomaStamp'
+                  : (state.currentTool == ToolType.bowelInfiltrate
+                      ? 'bowelInfiltrate'
+                      : (state.currentTool == ToolType.infiltrateStamp2
+                          ? 'infiltrateStamp2'
+                          : (state.currentTool == ToolType.customStamp
+                              ? 'custom'
+                              : state.currentTool == ToolType.iud
+                              ? 'iud'
+                              : state.currentTool == ToolType.foci
+                              ? 'foci'
+                              : state.currentTool == ToolType.follicle
+                              ? 'follicle'
+                              : 'polyp')))),
+          customStampPath: state.currentTool == ToolType.iudStamp
+              ? 'assets/images/mirena.png'
+              : (state.currentTool == ToolType.myomaStamp
+                  ? 'assets/images/myoma.png'
+                  : (state.currentTool == ToolType.bowelInfiltrate
+                      ? 'assets/images/infiltrat.png'
+                      : (state.currentTool == ToolType.infiltrateStamp2
+                          ? 'assets/images/infiltrat2.png'
+                          : (state.currentTool == ToolType.polyp
+                              ? 'assets/images/polyp.png'
+                              : (state.currentTool == ToolType.customStamp
+                                    ? state.customStampPath
+                                    : null))))),
           targetSchemePath: targetPath,
         );
         context.read<DrawBloc>().add(AddActionEvent(stampAction));
@@ -1955,17 +2022,21 @@ class _CanvasWidgetState extends State<CanvasWidget> {
         return SystemMouseCursors.precise;
       case ToolType.endometrioma:
       case ToolType.myoma:
+      case ToolType.myomaStamp:
       case ToolType.infiltrate:
       case ToolType.bowelInfiltrate:
+      case ToolType.infiltrateStamp2:
       case ToolType.bowelInfiltrate2:
       case ToolType.cyst:
         return SystemMouseCursors.precise;
       case ToolType.iud:
+      case ToolType.iudStamp:
       case ToolType.foci:
       case ToolType.follicle:
       case ToolType.polyp:
         return SystemMouseCursors.precise;
       case ToolType.customStamp:
+        return SystemMouseCursors.precise;
       case ToolType.gui:
       case ToolType.adenomyosis:
         return SystemMouseCursors.click;
@@ -2077,7 +2148,22 @@ class _CanvasWidgetState extends State<CanvasWidget> {
     final ui.Image? stampImage = state.currentTool == ToolType.bowelInfiltrate
         ? (_stampImagesNonNull['assets/images/infiltrat.png'] ??
             _stampImages['assets/images/infiltrat.png'])
-        : null;
+        : (state.currentTool == ToolType.infiltrateStamp2
+            ? (_stampImagesNonNull['assets/images/infiltrat2.png'] ??
+                _stampImages['assets/images/infiltrat2.png'])
+            : (state.currentTool == ToolType.polyp
+                ? (_stampImagesNonNull['assets/images/polyp.png'] ??
+                    _stampImages['assets/images/polyp.png'])
+                : (state.currentTool == ToolType.myomaStamp
+                    ? (_stampImagesNonNull['assets/images/myoma.png'] ??
+                        _stampImages['assets/images/myoma.png'])
+                    : (state.currentTool == ToolType.iudStamp
+                        ? (_stampImagesNonNull['assets/images/mirena.png'] ??
+                            _stampImages['assets/images/mirena.png'])
+                        : (state.currentTool == ToolType.customStamp && state.customStampPath != null
+                            ? (_stampImagesNonNull[state.customStampPath!] ??
+                                _stampImages[state.customStampPath!])
+                            : null)))));
 
     return Positioned(
       left: position.dx,
@@ -2121,7 +2207,7 @@ class _GhostStampPainter extends CustomPainter {
     switch (tool) {
       case ToolType.iud:
         // ВМС: Т-образная форма
-        final double scale = strokeWidth / 8.0;
+        final double scale = CanvasPainter.getIudScale(strokeWidth);
         final double width = 29.0 * scale;
         final double height = 36.0 * scale;
 
@@ -2141,6 +2227,62 @@ class _GhostStampPainter extends CustomPainter {
         canvas.drawLine(Offset.zero, Offset(0, height), ghostPaint);
 
         // Точка прицела в центре верхней планки
+        final dotPaint = Paint()
+          ..color = Colors.white.withValues(alpha: 0.9)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset.zero,
+          1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
+          dotPaint,
+        );
+        break;
+
+      case ToolType.iudStamp:
+        // Штамп Мирена (ВМС)
+        final double scale = CanvasPainter.getIudScale(strokeWidth);
+        final double height = 36.0 * scale;
+        final double width = height *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : (1216.0 / 1293.0));
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: width,
+          height: height,
+        );
+
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rect.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rect,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          final ghostPaint = Paint()
+            ..color = const Color(0xFF000000).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawRect(rect, ghostPaint);
+        }
+
+        // Тонкий контур границы
+        final borderPaint = Paint()
+          ..color = const Color(0xFF000000).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawRect(rect, borderPaint);
+
+        // Точка прицела в центре
         final dotPaint = Paint()
           ..color = Colors.white.withValues(alpha: 0.9)
           ..style = PaintingStyle.fill;
@@ -2218,65 +2360,64 @@ class _GhostStampPainter extends CustomPainter {
         break;
 
       case ToolType.polyp:
-        // Полип эндометрия (капля на ножке со штриховкой)
-        final double size = strokeWidth * 2.0;
+        // Штамп полипа
+        final double scalePolyp = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double heightPolyp = 90.0 * scalePolyp;
+        final double widthPolyp = heightPolyp *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : (1001.0 / 1025.0));
+        final rectPolyp = Rect.fromCenter(
+          center: Offset.zero,
+          width: widthPolyp,
+          height: heightPolyp,
+        );
 
-        final strokePaint = Paint()
-          ..color = const Color(0xFFFF7043).withValues(alpha: 0.7)
-          ..strokeWidth = 2.0
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rectPolyp.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rectPolyp,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          final ghostPaint = Paint()
+            ..color = const Color(0xFFFF7043).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawOval(rectPolyp, ghostPaint);
+        }
+
+        // Тонкий контур границы
+        final borderPaintPolyp = Paint()
+          ..color = const Color(0xFFFF7043).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
           ..style = PaintingStyle.stroke;
+        canvas.drawOval(rectPolyp, borderPaintPolyp);
 
-        final fillPaint = Paint()
-          ..color = const Color(0xFFFF7043).withValues(alpha: 0.25)
-          ..style = PaintingStyle.fill;
-
-        // Ножка вверх от курсора
-        canvas.drawLine(Offset.zero, Offset(0, -size * 0.8), strokePaint);
-
-        // Головка
-        final headRect = Rect.fromCenter(
-          center: Offset(0, -size * 1.3),
-          width: size * 1.2,
-          height: size * 1.0,
-        );
-        canvas.drawOval(headRect, fillPaint);
-        canvas.drawOval(headRect, strokePaint);
-
-        // Внутренняя штриховка
-        final hatchPaint = Paint()
-          ..color = const Color(0xFFFF7043).withValues(alpha: 0.5)
-          ..strokeWidth = 1.0;
-
-        final double headCenterY = -size * 1.3;
-        canvas.drawLine(
-          Offset(-size * 0.3, headCenterY - size * 0.1),
-          Offset(size * 0.3, headCenterY + size * 0.3),
-          hatchPaint,
-        );
-        canvas.drawLine(
-          Offset(-size * 0.4, headCenterY - size * 0.3),
-          Offset(size * 0.2, headCenterY + size * 0.1),
-          hatchPaint,
-        );
-        canvas.drawLine(
-          Offset(-size * 0.2, headCenterY + size * 0.1),
-          Offset(size * 0.4, headCenterY - size * 0.3),
-          hatchPaint,
-        );
-
-        final dotPaint = Paint()
+        // Точка прицела в центре
+        final dotPaintPolyp = Paint()
           ..color = Colors.white.withValues(alpha: 0.9)
           ..style = PaintingStyle.fill;
         canvas.drawCircle(
           Offset.zero,
           1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
-          dotPaint,
+          dotPaintPolyp,
         );
         break;
 
       case ToolType.bowelInfiltrate:
         // Штамп инфильтрата кишки
-        final double scale = strokeWidth / 5.0;
+        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
         final double height = 90.0 * scale;
         final double width = height *
             (stampImage != null
@@ -2328,6 +2469,168 @@ class _GhostStampPainter extends CustomPainter {
           Offset.zero,
           1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
           dotPaint,
+        );
+        break;
+
+      case ToolType.infiltrateStamp2:
+        // Штамп инфильтрата 2
+        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : 1.0);
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: width,
+          height: height,
+        );
+
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rect.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rect,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          final ghostPaint = Paint()
+            ..color = const Color(0xFF5C4033).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawOval(rect, ghostPaint);
+        }
+
+        final borderPaint = Paint()
+          ..color = const Color(0xFF5C4033).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawOval(rect, borderPaint);
+
+        final dotPaintInf2 = Paint()
+          ..color = Colors.white.withValues(alpha: 0.9)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset.zero,
+          1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
+          dotPaintInf2,
+        );
+        break;
+
+      case ToolType.myomaStamp:
+        // Штамп миоматозного узла
+        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : (1301.0 / 1209.0));
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: width,
+          height: height,
+        );
+
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rect.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rect,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          final ghostPaint = Paint()
+            ..color = const Color(0xFFFF69B4).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawOval(rect, ghostPaint);
+        }
+
+        final borderPaint = Paint()
+          ..color = const Color(0xFFFF69B4).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawOval(rect, borderPaint);
+
+        final dotPaint = Paint()
+          ..color = Colors.white.withValues(alpha: 0.9)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset.zero,
+          1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
+          dotPaint,
+        );
+        break;
+
+      case ToolType.customStamp:
+        // Пользовательский PNG штамп
+        final double scale = CanvasPainter.getBowelInfiltrateScale(strokeWidth);
+        final double height = 90.0 * scale;
+        final double width = height *
+            (stampImage != null
+                ? (stampImage!.width / stampImage!.height)
+                : 1.0);
+        final rect = Rect.fromCenter(
+          center: Offset.zero,
+          width: width,
+          height: height,
+        );
+
+        if (stampImage != null) {
+          canvas.saveLayer(
+            rect.inflate(4.0),
+            Paint()..color = const Color(0x99FFFFFF), // 60% прозрачность
+          );
+          canvas.drawImageRect(
+            stampImage!,
+            Rect.fromLTWH(
+              0,
+              0,
+              stampImage!.width.toDouble(),
+              stampImage!.height.toDouble(),
+            ),
+            rect,
+            Paint(),
+          );
+          canvas.restore();
+        } else {
+          final ghostPaint = Paint()
+            ..color = const Color(0xFF2196F3).withValues(alpha: 0.4)
+            ..style = PaintingStyle.fill;
+          canvas.drawRect(rect, ghostPaint);
+        }
+
+        final borderPaint = Paint()
+          ..color = const Color(0xFF2196F3).withValues(alpha: 0.6)
+          ..strokeWidth = 1.0
+          ..style = PaintingStyle.stroke;
+        canvas.drawRect(rect, borderPaint);
+
+        final dotPaintCustom = Paint()
+          ..color = Colors.white.withValues(alpha: 0.9)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset.zero,
+          1.8 / (effectiveScale > 0 ? effectiveScale : 1.0),
+          dotPaintCustom,
         );
         break;
 

@@ -1,14 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:med_scheme/features/editor/domain/entities/draw_action.dart';
+import 'package:flutter/services.dart';
 import 'package:med_scheme/features/editor/presentation/bloc/draw_bloc.dart';
 import 'package:med_scheme/features/editor/presentation/bloc/draw_event.dart';
+import 'package:med_scheme/features/editor/presentation/bloc/draw_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('DrawBloc Tests', () {
     late DrawBloc drawBloc;
 
     setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall methodCall) async => '.',
+      );
+      SharedPreferences.setMockInitialValues({});
       drawBloc = DrawBloc();
     });
 
@@ -34,11 +45,12 @@ void main() {
       expect(drawBloc.state.currentTool, ToolType.infiltrate);
       expect(drawBloc.state.currentColor, const Color(0xFF5C4033));
 
-      // Adhesions -> Grey
+      // Adhesions -> Grey, strokeWidth = 2.0
       drawBloc.add(SelectToolEvent(ToolType.adhesions));
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.adhesions);
       expect(drawBloc.state.currentColor, const Color(0xFF9E9E9E));
+      expect(drawBloc.state.currentStrokeWidth, 2.0);
 
       // Endometrioma -> Brown
       drawBloc.add(SelectToolEvent(ToolType.endometrioma));
@@ -52,17 +64,18 @@ void main() {
       expect(drawBloc.state.currentTool, ToolType.foci);
       expect(drawBloc.state.currentColor, const Color(0xFF880E4F));
 
-      // Cyst -> Sky Blue / Cyan
+      // Cyst -> Saturated Yellow (Color(0xFFFFD600))
       drawBloc.add(SelectToolEvent(ToolType.cyst));
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.cyst);
-      expect(drawBloc.state.currentColor, const Color(0xFF03A9F4));
+      expect(drawBloc.state.currentColor, const Color(0xFFFFD600));
 
-      // BowelInfiltrate -> Brown
+      // BowelInfiltrate -> Brown, strokeWidth = 3.0 (corresponds to old 2)
       drawBloc.add(SelectToolEvent(ToolType.bowelInfiltrate));
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.bowelInfiltrate);
       expect(drawBloc.state.currentColor, const Color(0xFF5C4033));
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
 
       // BowelInfiltrate2 -> Brown
       drawBloc.add(SelectToolEvent(ToolType.bowelInfiltrate2));
@@ -76,12 +89,58 @@ void main() {
       expect(drawBloc.state.currentTool, ToolType.spray);
       expect(drawBloc.state.currentStrokeWidth, 16.0);
 
-      // IUD -> Black color, strokeWidth = 8.0
+      // Fibrosis -> Black color, strokeWidth = 3.0
+      drawBloc.add(SelectToolEvent(ToolType.fibrosis));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.fibrosis);
+      expect(drawBloc.state.currentColor, const Color(0xFF000000));
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // IUD -> Black color, strokeWidth = 3.0 (scale 1..6 with default 3.0)
       drawBloc.add(SelectToolEvent(ToolType.iud));
       await drawBloc.stream.first;
       expect(drawBloc.state.currentTool, ToolType.iud);
       expect(drawBloc.state.currentColor, const Color(0xFF000000));
-      expect(drawBloc.state.currentStrokeWidth, 8.0);
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // IUDStamp -> Black color, strokeWidth = 3.0
+      drawBloc.add(SelectToolEvent(ToolType.iudStamp));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.iudStamp);
+      expect(drawBloc.state.currentColor, const Color(0xFF000000));
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // Myoma -> Pink color
+      drawBloc.add(SelectToolEvent(ToolType.myoma));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.myoma);
+      expect(drawBloc.state.currentColor, const Color(0xFFFF69B4));
+
+      // MyomaStamp -> strokeWidth = 3.0 (same size grid as bowelInfiltrate)
+      drawBloc.add(SelectToolEvent(ToolType.myomaStamp));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.myomaStamp);
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // InfiltrateStamp2 -> Brown, strokeWidth = 3.0
+      drawBloc.add(SelectToolEvent(ToolType.infiltrateStamp2));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.infiltrateStamp2);
+      expect(drawBloc.state.currentColor, const Color(0xFF5C4033));
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // Polyp -> Orange, strokeWidth = 3.0
+      drawBloc.add(SelectToolEvent(ToolType.polyp));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.polyp);
+      expect(drawBloc.state.currentColor, const Color(0xFFFF7043));
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+
+      // Eraser -> strokeWidth = 15.0
+      drawBloc.add(SelectToolEvent(ToolType.eraser));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.eraser);
+      expect(drawBloc.state.currentStrokeWidth, 15.0);
     });
 
 
@@ -322,6 +381,47 @@ void main() {
       expect(drawBloc.state.undoStack, isEmpty);
       expect(drawBloc.state.redoStack, isEmpty);
       expect(drawBloc.state.pages.length, 2);
+    });
+
+    test('ToolType.customStamp defaults to strokeWidth 3.0', () async {
+      drawBloc.add(SelectToolEvent(ToolType.customStamp));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.currentTool, ToolType.customStamp);
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+    });
+
+    test('Custom stamp slots initial state has 4 slots', () {
+      expect(drawBloc.state.customStampSlots.length, 4);
+      expect(drawBloc.state.activeStampSlotIndex, 0);
+    });
+
+    test('SelectCustomStampSlotEvent should switch active slot and activate customStamp tool', () async {
+      drawBloc.add(SelectCustomStampSlotEvent(2));
+      await drawBloc.stream.first;
+      expect(drawBloc.state.activeStampSlotIndex, 2);
+      expect(drawBloc.state.currentTool, ToolType.customStamp);
+      expect(drawBloc.state.currentStrokeWidth, 3.0);
+    });
+
+    test('AssignCustomStampSlotEvent with bytes saves slot and ClearCustomStampSlotEvent clears it', () async {
+      final fakePngBytes = Uint8List.fromList([137, 80, 78, 71, 13, 10, 26, 10]);
+      drawBloc.add(AssignCustomStampSlotEvent(slotIndex: 1, bytes: fakePngBytes));
+      await expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<DrawState>((s) => s.customStampSlots[1] != null)),
+      );
+
+      expect(drawBloc.state.activeStampSlotIndex, 1);
+      expect(drawBloc.state.customStampSlots[1], isNotNull);
+      expect(drawBloc.state.customStampPath, isNotNull);
+      expect(drawBloc.state.currentTool, ToolType.customStamp);
+
+      drawBloc.add(ClearCustomStampSlotEvent(1));
+      await expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<DrawState>((s) => s.customStampSlots[1] == null)),
+      );
+      expect(drawBloc.state.customStampSlots[1], isNull);
     });
   });
 }

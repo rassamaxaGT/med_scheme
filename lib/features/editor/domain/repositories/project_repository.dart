@@ -44,6 +44,7 @@ abstract class ProjectRepository {
   Future<Uint8List> generateReportPdf({
     required ProjectData project,
     required ReportConfig config,
+    bool isForPreview = false,
   });
 
   /// Отправляет медицинский отчет на печать через системную службу печати

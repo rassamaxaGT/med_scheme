@@ -1,6 +1,7 @@
+import 'dart:typed_data';
+import 'dart:ui';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/page_data.dart';
-import 'dart:ui';
 import 'draw_state.dart';
 
 abstract class DrawEvent {}
@@ -96,6 +97,30 @@ class ImportCustomStampEvent extends DrawEvent {
 class SelectCustomStampEvent extends DrawEvent {
   final String path;
   SelectCustomStampEvent(this.path);
+}
+
+class LoadCustomStampsEvent extends DrawEvent {}
+
+class AssignCustomStampSlotEvent extends DrawEvent {
+  final int slotIndex;
+  final String? sourceFilePath;
+  final Uint8List? bytes;
+
+  AssignCustomStampSlotEvent({
+    required this.slotIndex,
+    this.sourceFilePath,
+    this.bytes,
+  });
+}
+
+class SelectCustomStampSlotEvent extends DrawEvent {
+  final int slotIndex;
+  SelectCustomStampSlotEvent(this.slotIndex);
+}
+
+class ClearCustomStampSlotEvent extends DrawEvent {
+  final int slotIndex;
+  ClearCustomStampSlotEvent(this.slotIndex);
 }
 
 class UpdateHistoryWithoutUndoEvent extends DrawEvent {

@@ -60,7 +60,9 @@ class _EditorScreenState extends State<EditorScreen> {
   final _patientIdController = TextEditingController();
   // Используем ValueNotifier для позиции тулбара — избегаем перестройки всего дерева при drag
   final _toolboxPositionNotifier = ValueNotifier<Offset?>(null);
-  final _toolboxOrientationNotifier = ValueNotifier<ToolboxOrientation>(ToolboxOrientation.verticalLeft);
+  final _toolboxOrientationNotifier = ValueNotifier<ToolboxOrientation>(
+    ToolboxOrientation.verticalLeft,
+  );
   Offset? _dragPosition;
 
   List<String>? _savedHistoryIds;
@@ -273,7 +275,9 @@ class _EditorScreenState extends State<EditorScreen> {
                               : Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isSelected ? const Color(0xFF58A6FF) : Colors.white12,
+                            color: isSelected
+                                ? const Color(0xFF58A6FF)
+                                : Colors.white12,
                             width: 1.0,
                           ),
                         ),
@@ -355,7 +359,11 @@ class _EditorScreenState extends State<EditorScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.white12, width: 1.0),
                     ),
-                    child: const Icon(Icons.print, size: 18, color: Colors.white),
+                    child: const Icon(
+                      Icons.print,
+                      size: 18,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -749,8 +757,10 @@ class _EditorScreenState extends State<EditorScreen> {
                             buildWhen: (prev, next) =>
                                 prev.currentTool != next.currentTool ||
                                 prev.currentColor != next.currentColor ||
-                                prev.currentStrokeWidth != next.currentStrokeWidth ||
-                                prev.currentLineDashed != next.currentLineDashed ||
+                                prev.currentStrokeWidth !=
+                                    next.currentStrokeWidth ||
+                                prev.currentLineDashed !=
+                                    next.currentLineDashed ||
                                 prev.customStamps != next.customStamps,
                             builder: (context, drawState) {
                               final screenWidth = availableWidth;
@@ -774,19 +784,32 @@ class _EditorScreenState extends State<EditorScreen> {
                               final double initialY =
                                   (screenHeight - verticalHeight) / 2;
 
-                              Offset computeClampedOffset(Offset raw, ToolboxOrientation orientation) {
+                              Offset computeClampedOffset(
+                                Offset raw,
+                                ToolboxOrientation orientation,
+                              ) {
                                 final double currentWidth =
-                                    (orientation == ToolboxOrientation.horizontal)
+                                    (orientation ==
+                                        ToolboxOrientation.horizontal)
                                     ? horizontalWidth
                                     : verticalWidth;
                                 final double currentHeight =
-                                    (orientation == ToolboxOrientation.horizontal)
+                                    (orientation ==
+                                        ToolboxOrientation.horizontal)
                                     ? horizontalHeight
                                     : verticalHeight;
                                 final double minX = 16.0;
-                                final double maxX = _safeClamp(screenWidth - currentWidth - 16.0, minX, screenWidth);
+                                final double maxX = _safeClamp(
+                                  screenWidth - currentWidth - 16.0,
+                                  minX,
+                                  screenWidth,
+                                );
                                 final double minY = 16.0;
-                                final double maxY = _safeClamp(screenHeight - currentHeight - 16.0, minY, screenHeight);
+                                final double maxY = _safeClamp(
+                                  screenHeight - currentHeight - 16.0,
+                                  minY,
+                                  screenHeight,
+                                );
                                 return Offset(
                                   _safeClamp(raw.dx, minX, maxX),
                                   _safeClamp(raw.dy, minY, maxY),
@@ -795,27 +818,38 @@ class _EditorScreenState extends State<EditorScreen> {
 
                               Offset resolveOffset() {
                                 final pos = _toolboxPositionNotifier.value;
-                                if (pos == null) return Offset(initialX, initialY);
-                                return computeClampedOffset(pos, _toolboxOrientationNotifier.value);
+                                if (pos == null) {
+                                  return Offset(initialX, initialY);
+                                }
+                                return computeClampedOffset(
+                                  pos,
+                                  _toolboxOrientationNotifier.value,
+                                );
                               }
 
                               void handleDragUpdate(Offset delta) {
                                 final currentPos = resolveOffset();
-                                _dragPosition = (_dragPosition ?? currentPos) + delta;
+                                _dragPosition =
+                                    (_dragPosition ?? currentPos) + delta;
 
                                 final targetX = _dragPosition!.dx;
                                 final targetY = _dragPosition!.dy;
 
                                 // Проверяем прилипание (snapping) к левой/правой границе экрана
-                                ToolboxOrientation orientation = ToolboxOrientation.horizontal;
+                                ToolboxOrientation orientation =
+                                    ToolboxOrientation.horizontal;
                                 const double snapThreshold = 60.0;
 
                                 double newX = targetX;
                                 if (targetX < snapThreshold) {
                                   orientation = ToolboxOrientation.verticalLeft;
                                   newX = 16.0;
-                                } else if (targetX > screenWidth - verticalWidth - snapThreshold) {
-                                  orientation = ToolboxOrientation.verticalRight;
+                                } else if (targetX >
+                                    screenWidth -
+                                        verticalWidth -
+                                        snapThreshold) {
+                                  orientation =
+                                      ToolboxOrientation.verticalRight;
                                   newX = screenWidth - verticalWidth - 16.0;
                                 }
 
@@ -839,7 +873,10 @@ class _EditorScreenState extends State<EditorScreen> {
                               }
 
                               // Виджет настроек (Settings Bubble)
-                              final bubbleWidth = horizontalWidth.clamp(200.0, 340.0);
+                              final bubbleWidth = horizontalWidth.clamp(
+                                200.0,
+                                340.0,
+                              );
                               final bool showColor =
                                   tool == ToolType.pencil ||
                                   tool == ToolType.adhesions ||
@@ -860,58 +897,89 @@ class _EditorScreenState extends State<EditorScreen> {
                                   tool == ToolType.eraser ||
                                   tool == ToolType.foci ||
                                   tool == ToolType.iud ||
-                                  tool == ToolType.customStamp ||
+                                   (tool == ToolType.customStamp &&
+                                       drawState.customStampPath != null &&
+                                       drawState.customStampPath!.isNotEmpty) ||
                                   tool == ToolType.gui ||
                                   tool == ToolType.follicle ||
                                   tool == ToolType.cyst ||
                                   tool == ToolType.adenomyosis ||
                                   tool == ToolType.polyp ||
-                                  tool == ToolType.bowelInfiltrate;
+                                  tool == ToolType.bowelInfiltrate ||
+                                  tool == ToolType.infiltrateStamp2 ||
+                                  tool == ToolType.myomaStamp ||
+                                  tool == ToolType.iudStamp;
 
-                              final bool showCustomStamps = tool == ToolType.customStamp;
+                               final bool showCustomStamps =
+                                   tool == ToolType.customStamp &&
+                                   drawState.customStampPath != null &&
+                                   drawState.customStampPath!.isNotEmpty;
                               final bool showFigo = tool == ToolType.myoma;
 
                               Widget? settingsBubble;
                               if (tool != ToolType.move &&
-                                  (showColor || showThickness || showCustomStamps || showFigo)) {
-                                settingsBubble = ValueListenableBuilder<ToolboxOrientation>(
-                                  valueListenable: _toolboxOrientationNotifier,
-                                  builder: (context, orientation, _) {
-                                    return Container(
-                                      constraints: BoxConstraints(
-                                        maxWidth: (orientation == ToolboxOrientation.horizontal)
-                                            ? bubbleWidth
-                                            : verticalWidth,
-                                      ),
-                                      child: SettingsBubble(
-                                        currentColor: drawState.currentColor,
-                                        currentStrokeWidth: drawState.currentStrokeWidth,
-                                        currentTool: drawState.currentTool,
-                                        onColorChanged: (color) {
-                                          context.read<DrawBloc>().add(ChangeColorEvent(color));
-                                        },
-                                        onThicknessChanged: (width) {
-                                          context.read<DrawBloc>().add(ChangeStrokeWidthEvent(width));
-                                        },
-                                        orientation: orientation,
-                                        currentFigoType: drawState.currentFigoType,
-                                        onFigoTypeChanged: (type) {
-                                          // ignore: deprecated_member_use_from_same_package
-                                          context.read<DrawBloc>().add(ChangeFigoTypeEvent(type));
-                                        },
-                                        currentLineDashed: drawState.currentLineDashed,
-                                        onLineDashedChanged: (dashed) {
-                                          context.read<DrawBloc>().add(ToggleLineDashedEvent(dashed));
-                                        },
-                                      ),
+                                  (showColor ||
+                                      showThickness ||
+                                      showCustomStamps ||
+                                      showFigo)) {
+                                settingsBubble =
+                                    ValueListenableBuilder<ToolboxOrientation>(
+                                      valueListenable:
+                                          _toolboxOrientationNotifier,
+                                      builder: (context, orientation, _) {
+                                        return Container(
+                                          constraints: BoxConstraints(
+                                            maxWidth:
+                                                (orientation ==
+                                                    ToolboxOrientation
+                                                        .horizontal)
+                                                ? bubbleWidth
+                                                : verticalWidth,
+                                          ),
+                                          child: SettingsBubble(
+                                            currentColor:
+                                                drawState.currentColor,
+                                            currentStrokeWidth:
+                                                drawState.currentStrokeWidth,
+                                            currentTool: drawState.currentTool,
+                                            onColorChanged: (color) {
+                                              context.read<DrawBloc>().add(
+                                                ChangeColorEvent(color),
+                                              );
+                                            },
+                                            onThicknessChanged: (width) {
+                                              context.read<DrawBloc>().add(
+                                                ChangeStrokeWidthEvent(width),
+                                              );
+                                            },
+                                            orientation: orientation,
+                                            currentFigoType:
+                                                drawState.currentFigoType,
+                                            onFigoTypeChanged: (type) {
+                                              // ignore: deprecated_member_use_from_same_package
+                                              context.read<DrawBloc>().add(
+                                                ChangeFigoTypeEvent(type),
+                                              );
+                                            },
+                                            currentLineDashed:
+                                                drawState.currentLineDashed,
+                                            onLineDashedChanged: (dashed) {
+                                              context.read<DrawBloc>().add(
+                                                ToggleLineDashedEvent(dashed),
+                                              );
+                                            },
+                                          ),
+                                        );
+                                      },
                                     );
-                                  },
-                                );
                               }
 
                               // Тулбар и баббл настроек — позиционируются через ValueListenableBuilder
                               // чтобы drag не пересобирал BlocBuilder и CanvasWidget
-                              return ValueListenableBuilder2<Offset?, ToolboxOrientation>(
+                              return ValueListenableBuilder2<
+                                Offset?,
+                                ToolboxOrientation
+                              >(
                                 first: _toolboxPositionNotifier,
                                 second: _toolboxOrientationNotifier,
                                 builder: (context, pos, orientation, _) {
@@ -921,21 +989,31 @@ class _EditorScreenState extends State<EditorScreen> {
 
                                   Positioned? positionedSettings;
                                   if (settingsBubble != null) {
-                                    if (orientation == ToolboxOrientation.horizontal) {
+                                    if (orientation ==
+                                        ToolboxOrientation.horizontal) {
                                       positionedSettings = Positioned(
-                                        left: clampedOffset.dx + (horizontalWidth - bubbleWidth) / 2,
+                                        left:
+                                            clampedOffset.dx +
+                                            (horizontalWidth - bubbleWidth) / 2,
                                         top: clampedOffset.dy - 64.0,
                                         child: settingsBubble,
                                       );
-                                    } else if (orientation == ToolboxOrientation.verticalLeft) {
+                                    } else if (orientation ==
+                                        ToolboxOrientation.verticalLeft) {
                                       positionedSettings = Positioned(
-                                        left: clampedOffset.dx + verticalWidth + 8.0,
+                                        left:
+                                            clampedOffset.dx +
+                                            verticalWidth +
+                                            8.0,
                                         top: clampedOffset.dy,
                                         child: settingsBubble,
                                       );
                                     } else {
                                       positionedSettings = Positioned(
-                                        left: clampedOffset.dx - verticalWidth - 8.0,
+                                        left:
+                                            clampedOffset.dx -
+                                            verticalWidth -
+                                            8.0,
                                         top: clampedOffset.dy,
                                         child: settingsBubble,
                                       );
@@ -949,32 +1027,10 @@ class _EditorScreenState extends State<EditorScreen> {
                                       orientation: orientation,
                                       currentTool: drawState.currentTool,
                                       width: horizontalWidth,
-                                      onToolSelected: (tool) async {
-                                        if (tool == ToolType.customStamp &&
-                                            drawState.customStamps.isEmpty) {
-                                          final result = await FilePicker.platform.pickFiles(
-                                            type: FileType.custom,
-                                            allowedExtensions: ['png'],
-                                          );
-                                          if (result != null && result.files.single.path != null) {
-                                            if (context.mounted) {
-                                              context.read<DrawBloc>().add(
-                                                ImportCustomStampEvent(result.files.single.path!),
-                                              );
-                                            }
-                                          } else {
-                                            if (context.mounted) {
-                                              context.read<DrawBloc>().add(SelectToolEvent(ToolType.pencil));
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text('PNG-штамп не выбран. Загрузите файл для использования инструмента.'),
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        } else {
-                                          context.read<DrawBloc>().add(SelectToolEvent(tool));
-                                        }
+                                      onToolSelected: (tool) {
+                                        context.read<DrawBloc>().add(
+                                          SelectToolEvent(tool),
+                                        );
                                       },
                                       onDragStart: handleDragStart,
                                       onDragUpdate: handleDragUpdate,
@@ -1205,9 +1261,9 @@ class _EditorScreenState extends State<EditorScreen> {
       _lastSavedBackgroundPath = null;
     });
     _clearDraft();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Создан новый проект')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Создан новый проект')));
   }
 
   void _createNewProject(BuildContext context) async {
@@ -1232,9 +1288,7 @@ class _EditorScreenState extends State<EditorScreen> {
               child: const Text('Отмена'),
             ),
             TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.redAccent,
-              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
               onPressed: () => Navigator.pop(ctx, 'discard'),
               child: const Text('Не сохранять'),
             ),
@@ -1321,7 +1375,6 @@ class _EditorScreenState extends State<EditorScreen> {
       debugPrint('Ошибка выбора файла проекта: $e');
     }
   }
-
 
   bool _handleKeyEvent(KeyEvent event) {
     if (!mounted) return false;
@@ -1585,18 +1638,9 @@ class _SchemeSelector extends StatelessWidget {
 
         // Базовый список стандартных ракурсов
         final schemes = <Map<String, String>>[
-          {
-            'title': 'исходник',
-            'path': 'assets/schemes/standart_endo.jpg',
-          },
-          {
-            'title': 'Сагиттально',
-            'path': 'assets/schemes/sagittally.jpg',
-          },
-          {
-            'title': 'Матка',
-            'path': 'assets/schemes/uretus.png',
-          },
+          {'title': 'LS view', 'path': 'assets/schemes/ls_view.png'},
+          {'title': 'Сагиттально', 'path': 'assets/schemes/sagittally.jpg'},
+          {'title': 'Матка', 'path': 'assets/schemes/uretus.png'},
           {
             'title': 'Брюшная стенка',
             'path': 'assets/schemes/abdominal_wall_cross_section.png',
@@ -1654,10 +1698,18 @@ class _SchemeSelector extends StatelessWidget {
                   itemBuilder: (context, index) {
                     if (index == schemes.length) {
                       return ActionChip(
-                        avatar: const Icon(Icons.add_photo_alternate, size: 14, color: Colors.white),
+                        avatar: const Icon(
+                          Icons.add_photo_alternate,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                         label: const Text(
                           'Своё изображение',
-                          style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         backgroundColor: const Color(0xFF1565C0),
                         shape: RoundedRectangleBorder(
@@ -1669,15 +1721,21 @@ class _SchemeSelector extends StatelessWidget {
                     }
 
                     final item = schemes[index];
-                    final isSelected = currentPage.backgroundPaths.contains(item['path']);
+                    final isSelected = currentPage.backgroundPaths.contains(
+                      item['path'],
+                    );
                     final isCustom = item['isCustom'] == 'true';
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF0F4C81) : Colors.white.withValues(alpha: 0.05),
+                        color: isSelected
+                            ? const Color(0xFF0F4C81)
+                            : Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? const Color(0xFF1976D2) : Colors.transparent,
+                          color: isSelected
+                              ? const Color(0xFF1976D2)
+                              : Colors.transparent,
                         ),
                       ),
                       child: Row(
@@ -1691,20 +1749,31 @@ class _SchemeSelector extends StatelessWidget {
                               );
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   if (isSelected) ...[
-                                    const Icon(Icons.check, size: 12, color: Colors.white),
+                                    const Icon(
+                                      Icons.check,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
                                     const SizedBox(width: 4),
                                   ],
                                   Text(
                                     item['title']!,
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: isSelected ? Colors.white : Colors.white70,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.white70,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
                                     ),
                                   ),
                                 ],
@@ -1715,10 +1784,17 @@ class _SchemeSelector extends StatelessWidget {
                             InkWell(
                               borderRadius: BorderRadius.circular(12),
                               onTap: () {
-                                context.read<DrawBloc>().add(RemoveCustomSchemeEvent(item['path']!));
+                                context.read<DrawBloc>().add(
+                                  RemoveCustomSchemeEvent(item['path']!),
+                                );
                               },
                               child: const Padding(
-                                padding: EdgeInsets.only(right: 8, left: 2, top: 4, bottom: 4),
+                                padding: EdgeInsets.only(
+                                  right: 8,
+                                  left: 2,
+                                  top: 4,
+                                  bottom: 4,
+                                ),
                                 child: Icon(
                                   Icons.delete_outline,
                                   size: 15,

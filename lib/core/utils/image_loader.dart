@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -13,6 +14,19 @@ import '_image_loader_impl.dart'
 /// Универсальная загрузка изображений.
 /// Работает на Web (assets + blob/network) и на native (assets + локальный файл).
 Future<ui.Image?> loadUiImage(String rawPath) async {
+  // ── 0. Base64 data:image URI (Web & Native) ──────────────────────────────
+  if (rawPath.startsWith('data:image')) {
+    try {
+      final commaIndex = rawPath.indexOf(',');
+      final base64Data = commaIndex != -1 ? rawPath.substring(commaIndex + 1) : rawPath;
+      final bytes = base64Decode(base64Data);
+      return await _decodeBytes(bytes);
+    } catch (e) {
+      debugPrint('[ImageLoader] base64 data:image decode failed: $e');
+      return null;
+    }
+  }
+
   // Нормализуем путь
   final path = rawPath.replaceAll(r'\', '/').replaceAll(RegExp(r'^/+'), '');
 

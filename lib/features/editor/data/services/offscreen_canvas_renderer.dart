@@ -86,12 +86,14 @@ class OffscreenCanvasRenderer {
     required PageData page,
     double dpiScale = 2.0,
     String? patientId,
+    bool isForPreview = false,
   }) async {
     final activePaths = page.backgroundPaths.isNotEmpty
         ? page.backgroundPaths
         : (page.backgroundPath != null ? [page.backgroundPath!] : const <String>[]);
 
-    final cacheKey = '${page.id}_${page.history.length}_${activePaths.join(",")}_${dpiScale}_$patientId';
+    final cacheKey =
+        '${page.id}_${page.history.length}_${activePaths.join(",")}_${dpiScale}_${isForPreview}_$patientId';
     if (_pagePngCache.containsKey(cacheKey)) {
       return _pagePngCache[cacheKey]!;
     }
@@ -100,10 +102,16 @@ class OffscreenCanvasRenderer {
     final stampImages = await preloadStampImages(page.history);
 
     final baseSize = CanvasPainter.getCanvasBaseSize(activePaths, bgImages);
-    // Обеспечиваем 100% исходное качество каждого фона без пережима
-    final double scale = (activePaths.length <= 1) ? 2.0 : 1.25;
-    final width = (baseSize.width * scale).round().clamp(1600, 4096);
-    final height = (baseSize.height * scale).round().clamp(1200, 4096);
+    // Для интерактивного предпросмотра используем легковесный масштаб (ускорение PNG-кодирования в 20 раз),
+    // а для финальной печати/экспорта — полное качество 1600-4096px
+    final double scale = isForPreview
+        ? 0.75
+        : ((activePaths.length <= 1) ? 2.0 : 1.25);
+    final int minW = isForPreview ? 600 : 1600;
+    final int minH = isForPreview ? 500 : 1200;
+    final int maxDim = isForPreview ? 1000 : 4096;
+    final width = (baseSize.width * scale).round().clamp(minW, maxDim);
+    final height = (baseSize.height * scale).round().clamp(minH, maxDim);
     final renderSize = Size(width.toDouble(), height.toDouble());
 
     final recorder = ui.PictureRecorder();
@@ -185,12 +193,47 @@ class OffscreenCanvasRenderer {
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: cardWidth - 32 * config.dpiScale);
       titlePainter.paint(canvas, Offset(16 * config.dpiScale, currentY));
-      currentY += titlePainter.height + 6 * config.dpiScale;
+      currentY += titlePainter.height + 4 * config.dpiScale;
+
+      final device = config.deviceModel.trim();
+      final probes = config.probes.trim();
+      String? equipmentText;
+      if (device.isNotEmpty && probes.isNotEmpty) {
+        final isMultipleProbes = probes.contains(',') || probes.contains(';') || probes.contains(' и ');
+        final probeWord = isMultipleProbes ? 'датчиков' : 'датчика';
+        equipmentText = 'Исследование выполнено на аппарате $device с использованием $probeWord $probes';
+      } else if (device.isNotEmpty) {
+        equipmentText = 'Исследование выполнено на аппарате $device';
+      } else if (probes.isNotEmpty) {
+        final isMultipleProbes = probes.contains(',') || probes.contains(';') || probes.contains(' и ');
+        final probeWord = isMultipleProbes ? 'датчиков' : 'датчика';
+        equipmentText = 'Использованы $probeWord: $probes';
+      }
+
+      if (equipmentText != null) {
+        final equipPainter = TextPainter(
+          text: TextSpan(
+            text: equipmentText,
+            style: TextStyle(
+              color: const Color(0xFF444444),
+              fontSize: 10.0 * config.dpiScale,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: cardWidth - 32 * config.dpiScale);
+        equipPainter.paint(canvas, Offset(16 * config.dpiScale, currentY));
+        currentY += equipPainter.height + 4 * config.dpiScale;
+      }
+
+      final date = config.createdAt ?? DateTime.now();
+      final formattedDate =
+          '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year} '
+          '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 
       final infoText = StringBuffer();
       if (config.patientId.isNotEmpty) infoText.write('Пациент: ${config.patientId}   ');
       if (config.doctorName.isNotEmpty) infoText.write('Врач: ${config.doctorName}   ');
-      infoText.write('Дата: ${DateTime.now().toLocal().toString().split('.')[0]}');
+      infoText.write('Дата создания: $formattedDate');
 
       final infoPainter = TextPainter(
         text: TextSpan(

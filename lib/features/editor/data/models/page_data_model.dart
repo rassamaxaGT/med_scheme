@@ -27,9 +27,18 @@ class PageDataModel {
 
     List<String>? bgPaths;
     if (json['backgroundPaths'] is List) {
-      bgPaths =
-          (json['backgroundPaths'] as List).map((e) => e.toString()).toList();
+      bgPaths = (json['backgroundPaths'] as List).map((e) {
+        final path = e.toString();
+        return path == 'assets/schemes/standart_endo.jpg'
+            ? 'assets/schemes/ls_view.png'
+            : path;
+      }).toList();
     }
+
+    final bgPath = json['backgroundPath'] as String?;
+    final resolvedBgPath = bgPath == 'assets/schemes/standart_endo.jpg'
+        ? 'assets/schemes/ls_view.png'
+        : bgPath;
 
     return PageData(
       id: json['id'] as String? ??
@@ -37,7 +46,7 @@ class PageDataModel {
       pageType: json['pageType'] as String? ?? 'custom',
       title: json['title'] as String? ?? 'Лист',
       backgroundPaths: bgPaths,
-      backgroundPath: json['backgroundPath'] as String?,
+      backgroundPath: resolvedBgPath,
       history: historyList,
     );
   }

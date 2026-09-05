@@ -1,7 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
-- **Version**: 1.0.18 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
+- **Version**: 1.0.19 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x (Material 3)
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform medical drawing and annotation application designed for ultrasound (УЗИ) physicians, gynecologists, and surgeons. It functions as a medical scheme annotator, allowing clinicians to mark up standardized anatomical templates (pelvis, sagittal, uterus, abdominal wall) or imported scans with clinical pathology markers (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps, Indian Headdress/ГУИ). It features full off-screen rendering for export, interactive PDF report generation with printable medical forms, multi-page canvases, and 100% offline client-side execution.
 - **Key Dependencies**:
@@ -82,8 +82,8 @@
 - **Run Web App Locally**: `flutter run -d chrome`
 - **Build Production Web Target**: `flutter build web`
 - **Build Production Android Target**: `flutter build apk`
-- **Run Automated Test Suites**: `flutter test` (33/33 tests passing in [test/](file:///d:/projects/med_scheme/test))
-- **Static Lint Analysis**: `flutter analyze`
+- **Run Automated Test Suites**: `flutter test` (39/39 tests passing in [test/](file:///d:/projects/med_scheme/test))
+- **Static Lint Analysis**: `flutter analyze` (0 issues)
 - **Format Code**: `dart format .`
 - **Vercel Deploy Pipeline**: `.\deploy.ps1` (PowerShell script compiling web release and deploying to Vercel).
 
@@ -105,9 +105,10 @@
 ---
 
 ## 6. Active Development Context
-- **Current Version**: 1.0.18
-- **Current Status**: All core features and multi-canvas workflows completed. 33/33 unit/widget tests passing.
+- **Current Version**: 1.0.19
+- **Current Status**: All core features, multi-canvas workflows, and report print presets completed. 39/39 unit/widget tests passing.
 - **Recent Git Commits & Updates**:
+  - `83b5e64` — исправление работы ластика (v1.0.19)
   - `eba7c67` — размер фонов и координатный квадрат для мелких обектов (v1.0.18)
   - `d452939` — рендер фонов в полном разрешении (v1.0.17)
   - `b3e1faa` — исправление масштабов, координат и отображения объектов при скрытии фона и повторном показе (v1.0.16)

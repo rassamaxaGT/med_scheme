@@ -10,6 +10,8 @@ import '../../../domain/entities/report_config.dart';
 import '../../../domain/repositories/project_repository.dart';
 import '../../bloc/draw_bloc.dart';
 import '../../bloc/project_bloc.dart';
+import '../../../data/services/report_presets_service.dart';
+import 'preset_management_dialog.dart';
 
 /// Диалог настройки медицинского отчета с интерактивным предпросмотром и печатью
 class PrintExportDialog extends StatefulWidget {
@@ -47,12 +49,23 @@ class PrintExportDialog extends StatefulWidget {
 class _PrintExportDialogState extends State<PrintExportDialog> {
   late ReportConfig _config;
   late TextEditingController _patientController;
-  late TextEditingController _doctorController;
-  late TextEditingController _clinicController;
   late TextEditingController _notesController;
   late TextEditingController _filenameController;
   Timer? _debounceTimer;
   bool _isPrinting = false;
+
+  ReportPresetsService? _presetsService;
+  List<String> _clinics = [];
+  String _selectedClinic = '';
+  List<String> _doctors = [];
+  String _selectedDoctor = '';
+  List<String> _devices = [];
+  String _selectedDevice = '';
+  List<String> _probes = [];
+  String _selectedProbe1 = '';
+  String _selectedProbe2 = '';
+  DateTime _createdAt = DateTime.now();
+  bool _isPresetsLoaded = false;
 
   final ProjectRepository _repository = getIt<ProjectRepository>();
 
@@ -64,22 +77,71 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
       orientation: PageOrientation.landscape,
       layoutMode: SchemeLayoutMode.allOnSinglePage,
       includeHeader: true,
-      includeLegend: true,
+      includeLegend: false,
       includeOnlyActiveMarkersInLegend: true,
-      includeDoctorNotes: true,
+      includeDoctorNotes: false,
       dpiScale: 2.0,
       pngExportType: PngExportType.fullMedicalCard,
     );
 
     _patientController = TextEditingController(text: _config.patientId);
-    _doctorController = TextEditingController(text: _config.doctorName);
-    _clinicController = TextEditingController(text: _config.clinicName);
     _notesController = TextEditingController(text: _config.doctorNotes);
 
     final defaultFilename = (_config.patientId.isNotEmpty)
         ? 'УЗИ_${_config.patientId}_${DateTime.now().millisecondsSinceEpoch}'
         : 'УЗИ_отчет_${DateTime.now().millisecondsSinceEpoch}';
     _filenameController = TextEditingController(text: defaultFilename);
+
+    _loadPresets();
+  }
+
+  Future<void> _loadPresets() async {
+    try {
+      final service = await ReportPresetsService.create();
+      if (!mounted) return;
+      setState(() {
+        _presetsService = service;
+        _clinics = service.getClinics();
+        _selectedClinic = service.getDefaultClinic();
+
+        _doctors = service.getDoctors();
+        _selectedDoctor = service.getDefaultDoctor();
+
+        _devices = service.getDevices();
+        _selectedDevice = service.getDefaultDevice();
+
+        _probes = service.getProbes();
+        _selectedProbe1 = service.getSelectedProbe1();
+        _selectedProbe2 = service.getSelectedProbe2();
+
+        _config = _config.copyWith(
+          clinicName: _selectedClinic,
+          doctorName: _selectedDoctor,
+          deviceModel: _selectedDevice,
+          probes: _formattedProbesString(_selectedProbe1, _selectedProbe2),
+          createdAt: _createdAt,
+        );
+        _isPresetsLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('Ошибка загрузки пресетов печати: $e');
+      if (mounted) {
+        setState(() => _isPresetsLoaded = true);
+      }
+    }
+  }
+
+  String _formattedProbesString(String p1, String p2) {
+    final trimmed1 = p1.trim();
+    final trimmed2 = p2.trim();
+    if (trimmed1.isNotEmpty && trimmed2.isNotEmpty && trimmed1 != trimmed2) {
+      return '$trimmed1, $trimmed2';
+    } else if (trimmed1.isNotEmpty) {
+      return trimmed1;
+    } else if (trimmed2.isNotEmpty) {
+      return trimmed2;
+    }
+    return '';
   }
 
   void _onFieldChanged() {
@@ -95,8 +157,6 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
   void dispose() {
     _debounceTimer?.cancel();
     _patientController.dispose();
-    _doctorController.dispose();
-    _clinicController.dispose();
     _notesController.dispose();
     _filenameController.dispose();
     super.dispose();
@@ -111,8 +171,11 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
   ReportConfig get _currentConfig {
     return _config.copyWith(
       patientId: _patientController.text.trim(),
-      doctorName: _doctorController.text.trim(),
-      clinicName: _clinicController.text.trim(),
+      doctorName: _selectedDoctor.trim(),
+      clinicName: _selectedClinic.trim(),
+      deviceModel: _selectedDevice.trim(),
+      probes: _formattedProbesString(_selectedProbe1, _selectedProbe2),
+      createdAt: _createdAt,
       doctorNotes: _notesController.text.trim(),
     );
   }
@@ -218,25 +281,17 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
                     onChanged: (val) => _onFieldChanged(),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _doctorController,
-                    decoration: const InputDecoration(
-                      labelText: 'ФИО врача УЗД',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onChanged: (val) => _onFieldChanged(),
-                  ),
+                  _buildClinicSelector(),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _clinicController,
-                    decoration: const InputDecoration(
-                      labelText: 'Клиника / Отделение',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onChanged: (val) => _onFieldChanged(),
-                  ),
+                  _buildDoctorSelector(),
+                  const SizedBox(height: 10),
+                  _buildDeviceSelector(),
+                  const SizedBox(height: 10),
+                  _buildProbe1Selector(),
+                  const SizedBox(height: 10),
+                  _buildProbe2Selector(),
+                  const SizedBox(height: 10),
+                  _buildCreatedAtPicker(),
 
                   const SizedBox(height: 16),
                   _buildSectionTitle('Вёрстка и страницы'),
@@ -395,32 +450,535 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
           Expanded(
             child: Container(
               color: isDark ? const Color(0xFF0D1117) : const Color(0xFFEAEEF2),
-              child: PdfPreview(
-                maxPageWidth: 700,
-                canChangeOrientation: false,
-                canChangePageFormat: false,
-                canDebug: false,
-                useActions: false,
-                loadingWidget: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(strokeWidth: 2.5),
-                      SizedBox(height: 12),
-                      Text('Формирование бланка...', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                build: (PdfPageFormat format) => _repository.generateReportPdf(
-                  project: _currentProjectData,
-                  config: _currentConfig,
-                ),
-              ),
+              child: !_isPresetsLoaded
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(strokeWidth: 2.5),
+                          SizedBox(height: 12),
+                          Text('Подготовка отчета...', style: TextStyle(fontSize: 13)),
+                        ],
+                      ),
+                    )
+                  : PdfPreview(
+                      maxPageWidth: 700,
+                      canChangeOrientation: false,
+                      canChangePageFormat: false,
+                      canDebug: false,
+                      useActions: false,
+                      dynamicLayout: false,
+                      dpi: 120.0,
+                      loadingWidget: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(strokeWidth: 2.5),
+                            SizedBox(height: 12),
+                            Text('Формирование бланка...', style: TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                      build: (PdfPageFormat format) => _repository.generateReportPdf(
+                        project: _currentProjectData,
+                        config: _currentConfig,
+                        isForPreview: true,
+                      ),
+                    ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildClinicSelector() {
+    final clinics = List<String>.from(_clinics);
+    if (_selectedClinic.isNotEmpty && !clinics.contains(_selectedClinic)) {
+      clinics.insert(0, _selectedClinic);
+    }
+    final value = clinics.contains(_selectedClinic)
+        ? _selectedClinic
+        : (clinics.isNotEmpty ? clinics.first : null);
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('clinic_${value ?? ""}'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Клиника / Отделение',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        ...clinics.map((c) {
+          final isDefault = _presetsService?.getDefaultClinic() == c;
+          return DropdownMenuItem<String>(
+            value: c,
+            child: Row(
+              children: [
+                if (isDefault) ...[
+                  const Icon(Icons.star, size: 14, color: Colors.amber),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    c,
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const DropdownMenuItem<String>(
+          value: '__manage_clinics__',
+          child: Row(
+            children: [
+              Icon(Icons.tune, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text(
+                'Настроить список...',
+                style: TextStyle(fontSize: 12, color: Color(0xFF58A6FF)),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (val) {
+        if (val == '__manage_clinics__') {
+          _showManageClinicsDialog();
+          return;
+        }
+        if (val != null) {
+          setState(() => _selectedClinic = val);
+          _onFieldChanged();
+        }
+      },
+    );
+  }
+
+  Future<void> _showManageClinicsDialog() async {
+    if (_presetsService == null) return;
+    await PresetManagementDialog.show(
+      context: context,
+      title: 'Управление списком клиник',
+      itemLabel: 'Клиника / Отделение',
+      initialItems: _presetsService!.getClinics(),
+      initialDefault: _presetsService!.getDefaultClinic(),
+      onAdd: (name, makeDefault) => _presetsService!.addClinic(name, makeDefault: makeDefault),
+      onRemove: (name) => _presetsService!.removeClinic(name),
+      onSetDefault: (name) => _presetsService!.setDefaultClinic(name),
+    );
+
+    if (mounted) {
+      setState(() {
+        _clinics = _presetsService!.getClinics();
+        final def = _presetsService!.getDefaultClinic();
+        if (!_clinics.contains(_selectedClinic)) {
+          _selectedClinic = def;
+        }
+      });
+      _onFieldChanged();
+    }
+  }
+
+  Widget _buildDoctorSelector() {
+    final doctors = List<String>.from(_doctors);
+    if (_selectedDoctor.isNotEmpty && !doctors.contains(_selectedDoctor)) {
+      doctors.insert(0, _selectedDoctor);
+    }
+    final value = doctors.contains(_selectedDoctor) ? _selectedDoctor : '';
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('doc_$value'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'ФИО врача УЗД',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        const DropdownMenuItem<String>(
+          value: '',
+          child: Text('(Не указан)', style: TextStyle(fontSize: 13, color: Colors.grey)),
+        ),
+        ...doctors.map((d) {
+          final isDefault = _presetsService?.getDefaultDoctor() == d;
+          return DropdownMenuItem<String>(
+            value: d,
+            child: Row(
+              children: [
+                if (isDefault) ...[
+                  const Icon(Icons.star, size: 14, color: Colors.amber),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    d,
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const DropdownMenuItem<String>(
+          value: '__manage_doctors__',
+          child: Row(
+            children: [
+              Icon(Icons.tune, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text(
+                'Настроить список...',
+                style: TextStyle(fontSize: 12, color: Color(0xFF58A6FF)),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (val) {
+        if (val == '__manage_doctors__') {
+          _showManageDoctorsDialog();
+          return;
+        }
+        if (val != null) {
+          setState(() => _selectedDoctor = val);
+          _onFieldChanged();
+        }
+      },
+    );
+  }
+
+  Future<void> _showManageDoctorsDialog() async {
+    if (_presetsService == null) return;
+    await PresetManagementDialog.show(
+      context: context,
+      title: 'Управление списком врачей УЗД',
+      itemLabel: 'ФИО врача',
+      initialItems: _presetsService!.getDoctors(),
+      initialDefault: _presetsService!.getDefaultDoctor(),
+      onAdd: (name, makeDefault) => _presetsService!.addDoctor(name, makeDefault: makeDefault),
+      onRemove: (name) => _presetsService!.removeDoctor(name),
+      onSetDefault: (name) => _presetsService!.setDefaultDoctor(name),
+    );
+
+    if (mounted) {
+      setState(() {
+        _doctors = _presetsService!.getDoctors();
+        final def = _presetsService!.getDefaultDoctor();
+        if (!_doctors.contains(_selectedDoctor)) {
+          _selectedDoctor = def;
+        }
+      });
+      _onFieldChanged();
+    }
+  }
+
+  Widget _buildDeviceSelector() {
+    final devices = List<String>.from(_devices);
+    if (_selectedDevice.isNotEmpty && !devices.contains(_selectedDevice)) {
+      devices.insert(0, _selectedDevice);
+    }
+    final value = devices.contains(_selectedDevice)
+        ? _selectedDevice
+        : (devices.isNotEmpty ? devices.first : null);
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('dev_${value ?? ""}'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'УЗ-аппарат',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        ...devices.map((dev) {
+          final isDefault = _presetsService?.getDefaultDevice() == dev;
+          return DropdownMenuItem<String>(
+            value: dev,
+            child: Row(
+              children: [
+                if (isDefault) ...[
+                  const Icon(Icons.star, size: 14, color: Colors.amber),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    dev,
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const DropdownMenuItem<String>(
+          value: '__manage_devices__',
+          child: Row(
+            children: [
+              Icon(Icons.tune, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text(
+                'Настроить список...',
+                style: TextStyle(fontSize: 12, color: Color(0xFF58A6FF)),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (val) {
+        if (val == '__manage_devices__') {
+          _showManageDevicesDialog();
+          return;
+        }
+        if (val != null) {
+          setState(() => _selectedDevice = val);
+          _onFieldChanged();
+        }
+      },
+    );
+  }
+
+  Future<void> _showManageDevicesDialog() async {
+    if (_presetsService == null) return;
+    await PresetManagementDialog.show(
+      context: context,
+      title: 'Управление списком УЗ-аппаратов',
+      itemLabel: 'Модель аппарата',
+      initialItems: _presetsService!.getDevices(),
+      initialDefault: _presetsService!.getDefaultDevice(),
+      onAdd: (name, makeDefault) => _presetsService!.addDevice(name, makeDefault: makeDefault),
+      onRemove: (name) => _presetsService!.removeDevice(name),
+      onSetDefault: (name) => _presetsService!.setDefaultDevice(name),
+    );
+
+    if (mounted) {
+      setState(() {
+        _devices = _presetsService!.getDevices();
+        final def = _presetsService!.getDefaultDevice();
+        if (!_devices.contains(_selectedDevice)) {
+          _selectedDevice = def;
+        }
+      });
+      _onFieldChanged();
+    }
+  }
+
+  Widget _buildProbe1Selector() {
+    final probes = List<String>.from(_probes);
+    if (_selectedProbe1.isNotEmpty && !probes.contains(_selectedProbe1)) {
+      probes.insert(0, _selectedProbe1);
+    }
+    final value = probes.contains(_selectedProbe1)
+        ? _selectedProbe1
+        : (probes.isNotEmpty ? probes.first : null);
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('p1_${value ?? ""}'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'УЗ-датчик 1 (основной)',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        ...probes.map((p) {
+          final isDefault = _presetsService?.getDefaultProbe() == p;
+          return DropdownMenuItem<String>(
+            value: p,
+            child: Row(
+              children: [
+                if (isDefault) ...[
+                  const Icon(Icons.star, size: 14, color: Colors.amber),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    p,
+                    style: const TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const DropdownMenuItem<String>(
+          value: '__manage_probes__',
+          child: Row(
+            children: [
+              Icon(Icons.tune, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text(
+                'Настроить список...',
+                style: TextStyle(fontSize: 12, color: Color(0xFF58A6FF)),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (val) {
+        if (val == '__manage_probes__') {
+          _showManageProbesDialog();
+          return;
+        }
+        if (val != null) {
+          setState(() => _selectedProbe1 = val);
+          _presetsService?.setSelectedProbes(_selectedProbe1, _selectedProbe2);
+          _onFieldChanged();
+        }
+      },
+    );
+  }
+
+  Future<void> _showManageProbesDialog() async {
+    if (_presetsService == null) return;
+    await PresetManagementDialog.show(
+      context: context,
+      title: 'Управление списком УЗ-датчиков',
+      itemLabel: 'Тип / модель датчика',
+      initialItems: _presetsService!.getProbes(),
+      initialDefault: _presetsService!.getDefaultProbe(),
+      onAdd: (name, makeDefault) => _presetsService!.addProbe(name, makeDefault: makeDefault),
+      onRemove: (name) => _presetsService!.removeProbe(name),
+      onSetDefault: (name) => _presetsService!.setDefaultProbe(name),
+    );
+
+    if (mounted) {
+      setState(() {
+        _probes = _presetsService!.getProbes();
+        final def = _presetsService!.getDefaultProbe();
+        if (!_probes.contains(_selectedProbe1)) {
+          _selectedProbe1 = def;
+        }
+        if (_selectedProbe2.isNotEmpty && !_probes.contains(_selectedProbe2)) {
+          _selectedProbe2 = '';
+        }
+      });
+      _presetsService!.setSelectedProbes(_selectedProbe1, _selectedProbe2);
+      _onFieldChanged();
+    }
+  }
+
+  Widget _buildProbe2Selector() {
+    final probes = List<String>.from(_probes);
+    if (_selectedProbe2.isNotEmpty && !probes.contains(_selectedProbe2)) {
+      probes.insert(0, _selectedProbe2);
+    }
+    final value = probes.contains(_selectedProbe2) ? _selectedProbe2 : '';
+
+    return DropdownButtonFormField<String>(
+      key: ValueKey('p2_$value'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'УЗ-датчик 2 (дополнительный)',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        const DropdownMenuItem<String>(
+          value: '',
+          child: Text('(Не используется)', style: TextStyle(fontSize: 13, color: Colors.grey)),
+        ),
+        ...probes.map((p) {
+          return DropdownMenuItem<String>(
+            value: p,
+            child: Text(
+              p,
+              style: const TextStyle(fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }),
+        const DropdownMenuItem<String>(
+          value: '__manage_probes__',
+          child: Row(
+            children: [
+              Icon(Icons.tune, size: 14, color: Color(0xFF58A6FF)),
+              SizedBox(width: 6),
+              Text(
+                'Настроить список...',
+                style: TextStyle(fontSize: 12, color: Color(0xFF58A6FF)),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (val) {
+        if (val == '__manage_probes__') {
+          _showManageProbesDialog();
+          return;
+        }
+        if (val != null) {
+          setState(() => _selectedProbe2 = val);
+          _presetsService?.setSelectedProbes(_selectedProbe1, _selectedProbe2);
+          _onFieldChanged();
+        }
+      },
+    );
+  }
+
+  Widget _buildCreatedAtPicker() {
+    return InkWell(
+      onTap: _pickCreatedAtDate,
+      borderRadius: BorderRadius.circular(4),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Дата создания',
+          border: OutlineInputBorder(),
+          isDense: true,
+          suffixIcon: Icon(Icons.calendar_today, size: 18),
+        ),
+        child: Text(
+          _formatDateTime(_createdAt),
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickCreatedAtDate() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _createdAt,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate != null && mounted) {
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_createdAt),
+      );
+      if (mounted) {
+        setState(() {
+          _createdAt = DateTime(
+            pickedDate.year,
+            pickedDate.month,
+            pickedDate.day,
+            pickedTime?.hour ?? _createdAt.hour,
+            pickedTime?.minute ?? _createdAt.minute,
+          );
+        });
+        _onFieldChanged();
+      }
+    }
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    final year = dt.year.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$day.$month.$year $hour:$min';
   }
 
   Widget _buildSectionTitle(String title) {

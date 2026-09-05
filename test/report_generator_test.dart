@@ -21,10 +21,21 @@ void main() {
 
     test('ReportConfig copyWith works as expected', () {
       final config = const ReportConfig();
+      expect(config.includeHeader, true);
+      expect(config.includeLegend, false);
+      expect(config.includeDoctorNotes, false);
+      expect(config.deviceModel, '');
+      expect(config.probes, '');
+      expect(config.createdAt, isNull);
+
+      final now = DateTime(2026, 9, 5, 14, 30);
       final updated = config.copyWith(
         patientId: 'PT-1001',
         doctorName: 'Dr. Smith',
         clinicName: 'MedClinic',
+        deviceModel: 'Voluson E8',
+        probes: 'Конвексный C1-5, Трансвагинальный RIC5-9',
+        createdAt: now,
         doctorNotes: 'Всё в норме',
         orientation: PageOrientation.portrait,
         includeHeader: false,
@@ -34,6 +45,9 @@ void main() {
       expect(updated.patientId, 'PT-1001');
       expect(updated.doctorName, 'Dr. Smith');
       expect(updated.clinicName, 'MedClinic');
+      expect(updated.deviceModel, 'Voluson E8');
+      expect(updated.probes, 'Конвексный C1-5, Трансвагинальный RIC5-9');
+      expect(updated.createdAt, now);
       expect(updated.doctorNotes, 'Всё в норме');
       expect(updated.orientation, PageOrientation.portrait);
       expect(updated.includeHeader, false);
@@ -133,9 +147,12 @@ void main() {
         pages: [page1],
       );
 
-      final config = const ReportConfig(
+      final config = ReportConfig(
         clinicName: 'Клинический госпиталь УЗИ',
         doctorName: 'Врач Петрова А.А.',
+        deviceModel: 'GE Voluson E8',
+        probes: 'Конвексный C1-5, Трансвагинальный RIC5-9',
+        createdAt: DateTime(2026, 9, 5, 12, 0),
         doctorNotes: 'Эндометриома левого яичника 35 мм. Спаечный процесс в малом тазу.',
         orientation: PageOrientation.landscape,
         includeHeader: true,
@@ -182,6 +199,25 @@ void main() {
         config: configSeparate,
       );
       expect(pdfSeparateBytes, isNotEmpty);
+
+      // 3. Preview mode (optimized resolution and caching)
+      final pdfPreviewBytes = await pdfGenerator.generatePdf(
+        project: project,
+        config: configSingle,
+        isForPreview: true,
+      );
+      expect(pdfPreviewBytes, isNotEmpty);
+
+      // Verify that renderer caches preview PNG
+      final previewPng1 = await renderer.renderPageToPng(
+        page: page1,
+        isForPreview: true,
+      );
+      final previewPng2 = await renderer.renderPageToPng(
+        page: page1,
+        isForPreview: true,
+      );
+      expect(identical(previewPng1, previewPng2), isTrue);
     });
   });
 }
