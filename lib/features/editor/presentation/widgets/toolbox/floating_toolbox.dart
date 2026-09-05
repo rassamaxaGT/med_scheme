@@ -515,11 +515,11 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         ],
       ),
 
-      // 12. Штампы (пользовательские штампы)
+      // 12. Инструмент добавления штампов
       _ToolGroupDefinition(
-        id: 'custom_stamps',
-        name: 'Штампы',
-        icon: Icons.image_outlined,
+        id: 'add_stamp_tool',
+        name: 'Штамп',
+        icon: Icons.add_photo_alternate_outlined,
         items: [
           _ToolItemDefinition(
             id: 'add_stamp_placeholder',
@@ -527,7 +527,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
             label: 'Штамп',
             tooltip: 'Загрузить пользовательский PNG-штамп',
             icon: Icons.add_photo_alternate_outlined,
-            onTapOverride: () => _pickAndAddStamp(context, defaultGroupId: 'custom_stamps'),
+            isSelectedOverride: false,
+            onTapOverride: () => _pickAndAddStamp(context),
           ),
         ],
       ),
@@ -629,12 +630,15 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
       ),
     ];
 
+    final List<_ToolGroupDefinition> customGroups = [];
+
     // Добавляем созданные пользователем группы
     for (final customGroupName in drawState.customGroups) {
       final trimmed = customGroupName.trim();
       if (trimmed.isEmpty) continue;
-      if (!groups.any((g) => g.id == trimmed || g.name == trimmed)) {
-        groups.add(_ToolGroupDefinition(
+      if (!customGroups.any((g) => g.id == trimmed || g.name == trimmed) &&
+          !groups.any((g) => g.id == trimmed || g.name == trimmed)) {
+        customGroups.add(_ToolGroupDefinition(
           id: trimmed,
           name: trimmed,
           icon: Icons.bookmark_border,
@@ -644,24 +648,47 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
       }
     }
 
+    // Если есть кастомные штампы, чья группа еще не добавлена ни в groups, ни в customGroups
+    // (например, legacy 'custom_stamps' или новая группа)
+    for (final stamp in drawState.customStampItems) {
+      final gId = stamp.groupId.trim();
+      if (gId.isNotEmpty &&
+          !groups.any((g) => g.id == gId || g.name == gId) &&
+          !customGroups.any((g) => g.id == gId || g.name == gId)) {
+        final gName = (gId == 'custom_stamps') ? 'Штампы' : gId;
+        customGroups.add(_ToolGroupDefinition(
+          id: gId,
+          name: gName,
+          icon: Icons.bookmark_border,
+          isCustomGroup: true,
+          items: [],
+        ));
+      }
+    }
+
+    final allGroups = [...customGroups, ...groups];
+
     // Распределяем кастомные штампы по группам
     for (final stamp in drawState.customStampItems) {
       _ToolGroupDefinition? targetGroup;
-      for (final g in groups) {
+      for (final g in allGroups) {
         if (g.id == stamp.groupId || g.name == stamp.groupId) {
           targetGroup = g;
           break;
         }
       }
       if (targetGroup == null) {
-        if (drawState.customGroups.isNotEmpty) {
-          final firstCustom = drawState.customGroups.first.trim();
-          targetGroup = groups.firstWhere(
-            (g) => g.id == firstCustom || g.name == firstCustom,
-            orElse: () => groups.firstWhere((g) => g.id == 'custom_stamps'),
-          );
+        if (customGroups.isNotEmpty) {
+          targetGroup = customGroups.first;
         } else {
-          targetGroup = groups.firstWhere((g) => g.id == 'custom_stamps');
+          targetGroup = _ToolGroupDefinition(
+            id: 'custom_stamps',
+            name: 'Штампы',
+            icon: Icons.bookmark_border,
+            isCustomGroup: true,
+            items: [],
+          );
+          customGroups.add(targetGroup);
         }
       }
 
@@ -693,8 +720,8 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
     }
 
     // Для пустых пользовательских групп добавляем интерактивный плейсхолдер
-    for (final g in groups) {
-      if (g.isCustomGroup && g.items.isEmpty) {
+    for (final g in customGroups) {
+      if (g.items.isEmpty) {
         g.items.add(_ToolItemDefinition(
           id: 'add_stamp_placeholder_${g.id}',
           tool: ToolType.customStamp,
@@ -705,6 +732,14 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           onLongPress: () => _showEmptyGroupOptions(context, g),
         ));
       }
+    }
+
+    // Добавляемые группы должны появляться ПЕРЕД инструментом добавления штампов
+    final stampToolIndex = groups.indexWhere((g) => g.id == 'add_stamp_tool');
+    if (stampToolIndex != -1) {
+      groups.insertAll(stampToolIndex, customGroups);
+    } else {
+      groups.addAll(customGroups);
     }
 
     return groups;
@@ -942,7 +977,9 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         final drawState = drawBloc.state;
         final groups = _getToolGroups(context, drawState);
 
-        final groupOptions = groups.map((g) {
+        final groupOptions = groups
+            .where((g) => g.id != 'add_stamp_tool')
+            .map((g) {
           return StampGroupOption(
             id: g.id,
             name: g.name,
@@ -951,13 +988,26 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
           );
         }).toList();
 
+        if (!groupOptions.any((g) => g.id == 'custom_stamps' || g.name == 'Штампы')) {
+          groupOptions.add(StampGroupOption(
+            id: 'custom_stamps',
+            name: 'Штампы',
+            icon: Icons.image_outlined,
+          ));
+        }
+
+        final initialGroup = defaultGroupId ??
+            (groupOptions.any((g) => g.id == 'custom_stamps')
+                ? 'custom_stamps'
+                : groupOptions.first.id);
+
         final dialogResult = await AddCustomStampDialog.show(
           context,
           imagePath: p,
           bytes: bytes,
           defaultName: defaultName,
           availableGroups: groupOptions,
-          initialGroupId: defaultGroupId ?? 'custom_stamps',
+          initialGroupId: initialGroup,
         );
 
         if (dialogResult != null && context.mounted) {
@@ -2216,18 +2266,18 @@ class _ToolIconPreview extends StatelessWidget {
       );
     }
     if (tool == ToolType.customStamp) {
-      final state = context.read<DrawBloc>().state;
-      if (state.customStampPath != null && state.customStampPath!.isNotEmpty) {
+      if (customStampPath != null && customStampPath!.isNotEmpty) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: _FloatingToolboxState.buildStampThumbnail(
-            state.customStampPath!,
+            customStampPath!,
             width: 22,
             height: 22,
             iconSize: 18,
           ),
         );
       }
+      return Icon(Icons.add_photo_alternate_outlined, size: 20, color: color);
     }
     return SizedBox(
       width: 22,

@@ -302,5 +302,48 @@ void main() {
 
       drawBloc.close();
     });
+
+    testWidgets('Custom groups appear BEFORE the tool for adding stamps', (tester) async {
+      final drawBloc = DrawBloc();
+
+      // Create a custom group 'Хирургия'
+      drawBloc.emit(drawBloc.state.copyWith(
+        customGroups: ['Хирургия'],
+        customStampItems: [],
+      ));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BlocProvider.value(
+              value: drawBloc,
+              child: FloatingToolbox(
+                currentTool: ToolType.pencil,
+                orientation: ToolboxOrientation.horizontal,
+                onToolSelected: (_) {},
+                onDragUpdate: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Find custom group widget and add stamp button widget
+      final customGroupFinder = find.text('Хирургия', skipOffstage: false);
+      final addStampFinder = find.text('Штамп', skipOffstage: false);
+
+      expect(customGroupFinder, findsOneWidget);
+      expect(addStampFinder, findsOneWidget);
+
+      final customGroupPos = tester.getTopLeft(customGroupFinder);
+      final addStampPos = tester.getTopLeft(addStampFinder);
+
+      // In horizontal orientation, custom group must appear before (x < x) the add stamp tool
+      expect(customGroupPos.dx, lessThan(addStampPos.dx));
+
+      drawBloc.close();
+    });
   });
 }
