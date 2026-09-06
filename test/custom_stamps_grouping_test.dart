@@ -125,6 +125,61 @@ void main() {
       expect(state.customStampItems.first.groupId, 'custom_stamps');
       expect(state.activeStampItem?.name, 'Штамп 1');
       expect(state.currentTool, ToolType.customStamp);
+      expect(state.customStampPath, isNotNull);
+      expect(state.customStampPath, isNotEmpty);
+    });
+
+    test('Selecting previously added stamp persists customStampPath across events', () async {
+      final stamp = CustomStampItem(
+        id: 'test_stamp_prev',
+        name: 'Сохраненный Штамп',
+        imagePath: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        groupId: 'custom_stamps',
+      );
+
+      // 1. Сначала выбираем другой инструмент (карандаш)
+      drawBloc.add(SelectToolEvent(ToolType.pencil));
+      await expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<dynamic>((s) => s.currentTool == ToolType.pencil)),
+      );
+
+      // 2. Выбираем ранее добавленный штамп
+      final expSelect = expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<dynamic>((s) =>
+            s.currentTool == ToolType.customStamp &&
+            s.activeStampItem?.id == 'test_stamp_prev' &&
+            s.customStampPath == stamp.imagePath)),
+      );
+      drawBloc.add(SelectCustomStampItemEvent(stamp));
+      await expSelect;
+
+      expect(drawBloc.state.currentTool, ToolType.customStamp);
+      expect(drawBloc.state.activeStampItem?.id, 'test_stamp_prev');
+      expect(drawBloc.state.customStampPath, stamp.imagePath);
+
+      // 3. Изменяем толщину/размер штампа — путь не должен сбрасываться в null
+      final expWidth = expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<dynamic>((s) => s.currentStrokeWidth == 5.0)),
+      );
+      drawBloc.add(ChangeStrokeWidthEvent(5.0));
+      await expWidth;
+
+      expect(drawBloc.state.customStampPath, stamp.imagePath);
+      expect(drawBloc.state.activeStampItem?.id, 'test_stamp_prev');
+
+      // 4. Повторный SelectToolEvent(ToolType.customStamp) не должен сбрасывать customStampPath
+      final expTool = expectLater(
+        drawBloc.stream,
+        emitsThrough(predicate<dynamic>((s) => s.currentTool == ToolType.customStamp)),
+      );
+      drawBloc.add(SelectToolEvent(ToolType.customStamp));
+      await expTool;
+
+      expect(drawBloc.state.customStampPath, stamp.imagePath);
+      expect(drawBloc.state.activeStampItem?.id, 'test_stamp_prev');
     });
 
     test('CreateCustomGroupEvent and UpdateCustomStampGroupEvent work correctly', () async {

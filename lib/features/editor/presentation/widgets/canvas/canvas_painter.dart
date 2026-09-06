@@ -1999,7 +1999,7 @@ class CanvasPainter extends CustomPainter {
       }
     } else if (stamp.stampType == 'custom' && stamp.customStampPath != null) {
       // Рисуем пользовательский PNG штамп
-      final image = stampImages[stamp.customStampPath];
+      final image = stampImages[stamp.customStampPath] ?? cachedStampImages[stamp.customStampPath];
       if (image != null) {
         final double scale = getBowelInfiltrateScale(stamp.strokeWidth);
         final double height = 90.0 * scale * schemeScaleFactor;

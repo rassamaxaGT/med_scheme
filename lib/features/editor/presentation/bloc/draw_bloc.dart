@@ -171,10 +171,26 @@ class DrawBloc extends Bloc<DrawEvent, DrawState> {
           event.tool == ToolType.gui) {
         strokeWidth = 8.0;
       }
+
+      String? stampPath = state.customStampPath;
+      CustomStampItem? stampItem = state.activeStampItem;
+      if (event.tool == ToolType.customStamp) {
+        if (stampPath == null || stampPath.isEmpty) {
+          if (stampItem != null) {
+            stampPath = stampItem.imagePath;
+          } else if (state.customStampItems.isNotEmpty) {
+            stampItem = state.customStampItems.first;
+            stampPath = stampItem.imagePath;
+          }
+        }
+      }
+
       emit(state.copyWith(
         currentTool: event.tool,
         currentColor: defaultColor ?? state.currentColor,
         currentStrokeWidth: strokeWidth,
+        customStampPath: stampPath,
+        activeStampItem: stampItem,
       ));
     });
 

@@ -712,7 +712,6 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
         isSelectedOverride: isStampSelected,
         onTapOverride: () {
           context.read<DrawBloc>().add(SelectCustomStampItemEvent(stamp));
-          widget.onToolSelected(ToolType.customStamp);
           setState(() => _expandedGroupId = null);
         },
         onLongPress: () => _showCustomStampOptions(context, stamp),
@@ -1022,7 +1021,6 @@ class _FloatingToolboxState extends State<FloatingToolbox> {
             sourceFilePath: p,
             bytes: bytes,
           ));
-          widget.onToolSelected(ToolType.customStamp);
         }
       }
     } catch (e) {

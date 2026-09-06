@@ -250,17 +250,27 @@ class _CanvasWidgetState extends State<CanvasWidget> {
 
         // Также грузим все кастомные штампы из слотов
         for (final slotPath in state.customStampSlots) {
-          if (slotPath != null && !_stampImages.containsKey(slotPath)) {
+          if (slotPath != null && (!_stampImages.containsKey(slotPath) || _stampImages[slotPath] == null)) {
             _stampImages[slotPath] = null as dynamic;
             Future.microtask(() => _loadCustomStampImage(slotPath));
           }
         }
 
+        // Также грузим все кастомные штампы из списка customStampItems
+        for (final item in state.customStampItems) {
+          if (item.imagePath.isNotEmpty &&
+              (!_stampImages.containsKey(item.imagePath) || _stampImages[item.imagePath] == null)) {
+            _stampImages[item.imagePath] = null as dynamic;
+            Future.microtask(() => _loadCustomStampImage(item.imagePath));
+          }
+        }
+
         // Также грузим текущий выбранный кастомный штамп
-        if (state.customStampPath != null &&
-            !_stampImages.containsKey(state.customStampPath!)) {
-          _stampImages[state.customStampPath!] = null as dynamic;
-          Future.microtask(() => _loadCustomStampImage(state.customStampPath!));
+        final activeCustomPath = state.customStampPath ?? state.activeStampItem?.imagePath;
+        if (activeCustomPath != null && activeCustomPath.isNotEmpty &&
+            (!_stampImages.containsKey(activeCustomPath) || _stampImages[activeCustomPath] == null)) {
+          _stampImages[activeCustomPath] = null as dynamic;
+          Future.microtask(() => _loadCustomStampImage(activeCustomPath));
         }
 
         return ClipRect(
@@ -311,7 +321,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                     activeState.currentTool == ToolType.infiltrateStamp2 ||
                     activeState.currentTool == ToolType.myomaStamp ||
                     (activeState.currentTool == ToolType.customStamp &&
-                        activeState.customStampPath != null);
+                        (activeState.customStampPath != null ||
+                            activeState.activeStampItem != null));
                 if (needsHover) {
                   _hoverCursorNotifier.value = event.localPosition;
                 } else {
@@ -380,7 +391,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                             state.currentTool == ToolType.infiltrateStamp2 ||
                             state.currentTool == ToolType.myomaStamp ||
                             (state.currentTool == ToolType.customStamp &&
-                                state.customStampPath != null);
+                                (state.customStampPath != null ||
+                                    state.activeStampItem != null));
 
                         if (isGhostTool) {
                           return _buildGhostCursor(state, hoverPos);
@@ -468,8 +480,13 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       final image = await loadUiImage(path);
       if (mounted) {
         setState(() {
-          _stampImages[path] = image;
-          _rebuildNonNullStampImages(); // синхронизируем кэш non-null карты
+          if (image != null) {
+            _stampImages[path] = image;
+            _rebuildNonNullStampImages(); // синхронизируем кэш non-null карты
+          } else {
+            _stampImages.remove(path);
+            _rebuildNonNullStampImages();
+          }
         });
       }
     } catch (e) {
@@ -1457,8 +1474,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
           state.currentTool == ToolType.infiltrateStamp2 ||
           state.currentTool == ToolType.myomaStamp) {
         // Штампы срабатывают мгновенно при нажатии
+        final effectiveCustomStampPath = state.customStampPath ?? state.activeStampItem?.imagePath;
         if (state.currentTool == ToolType.customStamp &&
-            state.customStampPath == null) {
+            effectiveCustomStampPath == null) {
           return;
         }
         final stampAction = StampAction(
@@ -1494,7 +1512,7 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                           : (state.currentTool == ToolType.polyp
                               ? 'assets/images/polyp.png'
                               : (state.currentTool == ToolType.customStamp
-                                    ? state.customStampPath
+                                    ? effectiveCustomStampPath
                                     : null))))),
           targetSchemePath: targetPath,
         );
@@ -2221,6 +2239,8 @@ class _CanvasWidgetState extends State<CanvasWidget> {
       state.backgroundPaths,
     );
 
+    final String? effectiveCustomPath = state.customStampPath ?? state.activeStampItem?.imagePath;
+
     final ui.Image? stampImage = state.currentTool == ToolType.bowelInfiltrate
         ? (_stampImagesNonNull['assets/images/infiltrat.png'] ??
             _stampImages['assets/images/infiltrat.png'])
@@ -2236,9 +2256,9 @@ class _CanvasWidgetState extends State<CanvasWidget> {
                     : (state.currentTool == ToolType.iudStamp
                         ? (_stampImagesNonNull['assets/images/mirena.png'] ??
                             _stampImages['assets/images/mirena.png'])
-                        : (state.currentTool == ToolType.customStamp && state.customStampPath != null
-                            ? (_stampImagesNonNull[state.customStampPath!] ??
-                                _stampImages[state.customStampPath!])
+                        : (state.currentTool == ToolType.customStamp && effectiveCustomPath != null
+                            ? (_stampImagesNonNull[effectiveCustomPath] ??
+                                _stampImages[effectiveCustomPath])
                             : null)))));
 
     return Positioned(

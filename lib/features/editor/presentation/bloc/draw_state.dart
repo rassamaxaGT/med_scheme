@@ -118,6 +118,7 @@ class DrawState {
     List<String?>? customStampSlots,
     int? activeStampSlotIndex,
     String? customStampPath,
+    bool clearCustomStampPath = false,
     List<String>? customStamps,
     List<CustomStampItem>? customStampItems,
     List<String>? customGroups,
@@ -160,10 +161,19 @@ class DrawState {
 
     final effectiveSlots = customStampSlots ?? this.customStampSlots;
     final effectiveSlotIndex = activeStampSlotIndex ?? this.activeStampSlotIndex;
-    final effectiveCustomStampPath = customStampPath ??
-        ((effectiveSlotIndex >= 0 && effectiveSlotIndex < effectiveSlots.length)
-            ? effectiveSlots[effectiveSlotIndex]
-            : this.customStampPath);
+    final String? effectiveCustomStampPath;
+    if (clearCustomStampPath) {
+      effectiveCustomStampPath = null;
+    } else if (customStampPath != null) {
+      effectiveCustomStampPath = customStampPath;
+    } else if (activeStampSlotIndex != null) {
+      effectiveCustomStampPath = (activeStampSlotIndex >= 0 && activeStampSlotIndex < effectiveSlots.length)
+          ? effectiveSlots[activeStampSlotIndex]
+          : this.customStampPath;
+    } else {
+      effectiveCustomStampPath = this.customStampPath ??
+          (clearActiveStampItem ? null : (activeStampItem?.imagePath ?? this.activeStampItem?.imagePath));
+    }
     final effectiveCustomStamps = customStamps ?? effectiveSlots.whereType<String>().toList();
 
     return DrawState(
