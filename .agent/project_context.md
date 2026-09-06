@@ -1,7 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
-- **Version**: 1.0.26 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
+- **Version**: 1.0.27 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x (Material 3)
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform medical drawing and annotation application designed for ultrasound (УЗИ) physicians, gynecologists, and surgeons. It functions as a medical scheme annotator, allowing clinicians to mark up standardized anatomical templates (pelvis, sagittal, uterus, abdominal wall, laparoscopic view) or imported scans with clinical pathology markers (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps, Indian Headdress/ГУИ). It features full off-screen rendering for export, interactive PDF report generation with printable medical forms, Cyrillic font support, user custom stamps organized into custom groups with hardware-accelerated image scaling and in-memory caching, clinic/doctor presets, multi-page canvases, and 100% offline client-side execution.
 - **Key Dependencies**:
@@ -53,14 +53,16 @@
           - [pdf_report_generator_impl.dart](file:///d:/projects/med_scheme/lib/features/editor/data/services/pdf_report_generator_impl.dart): Vector and bitmap PDF document generator with Cyrillic font loading (`Roboto-Regular`, `Roboto-Bold`, `Roboto-Italic`), custom layouts (single/multi-page), clinical header, notes, and legend tables.
       - `presentation/`:
         - `bloc/`:
-          - [draw_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_bloc.dart): Manages active drawing state (current tool, clinical default colors, rotation, custom stamps, undo/redo, multi-page switching).
+          - [draw_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_bloc.dart): Manages active drawing state (current tool, clinical default colors, rotation, custom stamps with fallback recovery, undo/redo, multi-page switching).
+          - [draw_event.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_event.dart): Canvas and drawing event definitions.
+          - [draw_state.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_state.dart): State immutable representation for canvas, tools, pages, active stamp items, and stamp groups.
           - [project_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/project_bloc.dart): Manages filesystem workflows (creating, opening, autosaving, exporting files, and SAF folder management).
         - `screens/`:
           - [editor_screen.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/screens/editor_screen.dart): Main editor view containing top AppBar, tab navigation, preset scheme selector chips, and dialogs.
         - `widgets/`:
           - `canvas/`:
             - [canvas_painter.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_painter.dart): `CustomPainter` rendering background schemes in full resolution, clinical overlays, selection boxes, rotation handles, and all `DrawAction` elements.
-            - [canvas_widget.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart): Interactive canvas handling touch/pen stylus gestures, palm rejection, pressure sensitivity, pinch-to-zoom/pan, and object rotation.
+            - [canvas_widget.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart): Interactive canvas handling touch/pen stylus gestures, palm rejection, pressure sensitivity, pinch-to-zoom/pan, ghost previews, and object rotation.
           - `dialogs/`:
             - [add_custom_stamp_dialog.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/dialogs/add_custom_stamp_dialog.dart): Dialog for importing, naming, previewing, and assigning custom stamps to existing or new user groups.
             - [print_export_dialog.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/dialogs/print_export_dialog.dart): Fullscreen modal for PDF report customization, live interactive preview, and direct system printing/export.
@@ -87,7 +89,7 @@
 - **Run Web App Locally**: `flutter run -d chrome`
 - **Build Production Web Target**: `flutter build web`
 - **Build Production Android Target**: `flutter build apk`
-- **Run Automated Test Suites**: `flutter test` (59/59 tests passing in [test/](file:///d:/projects/med_scheme/test))
+- **Run Automated Test Suites**: `flutter test` (60/60 tests passing in [test/](file:///d:/projects/med_scheme/test))
 - **Static Lint Analysis**: `flutter analyze` (0 issues)
 - **Format Code**: `dart format .`
 - **Vercel Deploy Pipeline**: `.\deploy.ps1` (PowerShell script compiling web release and deploying to Vercel).
@@ -104,17 +106,19 @@
 - **Stylus & Touch Handling**:
   - Palm Rejection: When stylus/pen input is active, touch input is filtered out.
   - Interactive Rotation: Selected shapes/stamps support rotation handles and hit-testing in rotated coordinate space.
-- **Custom Stamp System v4**:
+- **Custom Stamp System v4 & Fallback Resilience (v1.0.27)**:
   - Grouped stamps (user-created folders/groups) are placed dynamically in the floating toolbar before the stamp addition button.
   - In-memory caching and engine-level image downscaling ensure 0-lag addition and deletion of custom stamps without freezing the UI thread.
-- **Offscreen & PDF Generation**: `OffscreenCanvasRenderer` uses pure `dart:ui` `PictureRecorder` to render high-DPI canvases independent of device viewport dimensions. `PdfReportGenerator` embeds Roboto Cyrillic fonts for clean Russian text rendering on all platforms.
+  - Automatic fallback protection ensures custom stamp selection does not get dropped/reset if slot or path references change.
+- **Offscreen & PDF Generation**: `OffscreenCanvasRenderer` uses pure `dart:ui` `PictureRecorder` to render high-DPI canvases independent of device viewport dimensions. `PdfReportGenerator` embeds Roboto Cyrillic fonts for clean Russian text rendering on all platforms. PDF filenames follow the standardized format: `ФАМИЛИЯ_отчёт_дата.pdf` (например, `Иванова_отчёт_06.09.2026.pdf`).
 
 ---
 
 ## 6. Active Development Context
-- **Current Version**: 1.0.26
-- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, clinic/doctor presets, and Cyrillic PDF reports are completely implemented and verified. 59/59 unit and widget tests pass, 0 lint issues.
+- **Current Version**: 1.0.27
+- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`) are completely implemented and verified. 61/61 unit and widget tests pass, 0 lint issues.
 - **Recent Git Commits & Updates**:
+  - `bde9608` — fix сброса кастомных штампов (v1.0.27)
   - `185919d` — Группировки кастомных штампов v4 (v1.0.26)
   - `45489f7` — Устранение 5-7 сек зависания при добавлении/удалении штампов: аппаратное C++ масштабирование и in-memory кэширование
   - `f4a00ad` — Порядок отображения: добавляемые группы штампов располагаются перед инструментом добавления штампов
@@ -122,10 +126,11 @@
   - `a2b1cfe` — Группировки кастомных штампов v3 (v1.0.25)
 - **Key Working Files**:
   - [custom_stamps_service.dart](file:///d:/projects/med_scheme/lib/features/editor/data/services/custom_stamps_service.dart)
-  - [add_custom_stamp_dialog.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/dialogs/add_custom_stamp_dialog.dart)
-  - [floating_toolbox.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/toolbox/floating_toolbox.dart)
-  - [canvas_painter.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_painter.dart)
+  - [draw_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_bloc.dart)
   - [canvas_widget.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart)
+  - [canvas_painter.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_painter.dart)
+  - [floating_toolbox.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/toolbox/floating_toolbox.dart)
+  - [add_custom_stamp_dialog.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/dialogs/add_custom_stamp_dialog.dart)
   - [editor_screen.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/screens/editor_screen.dart)
   - [pdf_report_generator_impl.dart](file:///d:/projects/med_scheme/lib/features/editor/data/services/pdf_report_generator_impl.dart)
   - [print_export_dialog.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/dialogs/print_export_dialog.dart)

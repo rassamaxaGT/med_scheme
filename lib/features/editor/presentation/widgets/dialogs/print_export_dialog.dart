@@ -87,9 +87,10 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
     _patientController = TextEditingController(text: _config.patientId);
     _notesController = TextEditingController(text: _config.doctorNotes);
 
-    final defaultFilename = (_config.patientId.isNotEmpty)
-        ? 'УЗИ_${_config.patientId}_${DateTime.now().millisecondsSinceEpoch}'
-        : 'УЗИ_отчет_${DateTime.now().millisecondsSinceEpoch}';
+    final defaultFilename = formatReportPdfFilename(
+      patientId: _config.patientId,
+      date: _createdAt,
+    );
     _filenameController = TextEditingController(text: defaultFilename);
 
     _loadPresets();
@@ -145,6 +146,10 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
   }
 
   void _onFieldChanged() {
+    _filenameController.text = formatReportPdfFilename(
+      patientId: _patientController.text.trim(),
+      date: _createdAt,
+    );
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (mounted) {
@@ -1000,10 +1005,12 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
         config: _currentConfig,
       );
 
-      final patient = _patientController.text.trim().isNotEmpty
-          ? _patientController.text.trim()
-          : 'report';
-      final docName = 'УЗИ_${patient}_${DateTime.now().millisecondsSinceEpoch}';
+      final docName = _filenameController.text.trim().isNotEmpty
+          ? _filenameController.text.trim()
+          : formatReportPdfFilename(
+              patientId: _patientController.text.trim(),
+              date: _createdAt,
+            );
 
       await Printing.layoutPdf(
         name: docName,
@@ -1026,10 +1033,15 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
   }
 
   void _savePdf() {
-    final filename = _filenameController.text.trim();
+    final filename = _filenameController.text.trim().isNotEmpty
+        ? _filenameController.text.trim()
+        : formatReportPdfFilename(
+            patientId: _patientController.text.trim(),
+            date: _createdAt,
+          );
     context.read<ProjectBloc>().add(
       ExportReportPdfEvent(
-        projectName: filename.isNotEmpty ? filename : 'УЗИ_отчет',
+        projectName: filename,
         project: _currentProjectData,
         config: _currentConfig,
       ),
@@ -1055,7 +1067,13 @@ class _PrintExportDialogState extends State<PrintExportDialog> {
         project: _currentProjectData,
         config: _currentConfig,
       );
-      final filename = '${_filenameController.text.trim()}.pdf';
+      final baseName = _filenameController.text.trim().isNotEmpty
+          ? _filenameController.text.trim()
+          : formatReportPdfFilename(
+              patientId: _patientController.text.trim(),
+              date: _createdAt,
+            );
+      final filename = '$baseName.pdf';
       await Printing.sharePdf(bytes: bytes, filename: filename);
     } catch (e) {
       if (mounted) {

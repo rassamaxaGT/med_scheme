@@ -54,6 +54,74 @@ void main() {
       expect(updated.includeLegend, true);
     });
 
+    test('formatReportPdfFilename correctly formats ФАМИЛИЯ_отчёт_дата', () {
+      final testDate = DateTime(2026, 9, 6, 15, 30);
+
+      // 1. Одиночная фамилия
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова', date: testDate),
+        'Иванова_отчёт_06.09.2026',
+      );
+
+      // 2. Полное ФИО (берется только первое слово - фамилия)
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова Анна Ивановна', date: testDate),
+        'Иванова_отчёт_06.09.2026',
+      );
+
+      // 3. Фамилия с инициалами
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова А.И.', date: testDate),
+        'Иванова_отчёт_06.09.2026',
+      );
+
+      // 4. Двойная фамилия через дефис
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова-Петрова Мария', date: testDate),
+        'Иванова-Петрова_отчёт_06.09.2026',
+      );
+
+      // 5. Фамилия с запятой
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова, Анна', date: testDate),
+        'Иванова_отчёт_06.09.2026',
+      );
+
+      // 6. Пустая строка или пробелы -> «Пациент»
+      expect(
+        formatReportPdfFilename(patientId: '', date: testDate),
+        'Пациент_отчёт_06.09.2026',
+      );
+      expect(
+        formatReportPdfFilename(patientId: '   ', date: testDate),
+        'Пациент_отчёт_06.09.2026',
+      );
+      expect(
+        formatReportPdfFilename(patientId: null, date: testDate),
+        'Пациент_отчёт_06.09.2026',
+      );
+
+      // 7. Недопустимые символы очищаются
+      expect(
+        formatReportPdfFilename(patientId: 'Иванова/Тест:1', date: testDate),
+        'ИвановаТест1_отчёт_06.09.2026',
+      );
+
+      // 8. Форматирование даты с нулями (однозначные день и месяц)
+      final earlyDate = DateTime(2026, 1, 5);
+      expect(
+        formatReportPdfFilename(patientId: 'Смирнов', date: earlyDate),
+        'Смирнов_отчёт_05.01.2026',
+      );
+
+      // 9. Вызов через ReportConfig.generatePdfFilename()
+      final config = ReportConfig(
+        patientId: 'Кузнецова Ольга',
+        createdAt: testDate,
+      );
+      expect(config.generatePdfFilename(), 'Кузнецова_отчёт_06.09.2026');
+    });
+
     test('OffscreenCanvasRenderer renders page to PNG bytes', () async {
       final page = PageData(
         id: 'test_page_1',

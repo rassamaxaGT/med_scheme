@@ -121,4 +121,43 @@ class ReportConfig {
       pngExportType: pngExportType ?? this.pngExportType,
     );
   }
+
+  /// Формирует имя файла для сохранения PDF-отчета по правилу:
+  /// ФАМИЛИЯ_отчёт_дата (например: «Иванова_отчёт_06.09.2026»)
+  String generatePdfFilename() {
+    return formatReportPdfFilename(patientId: patientId, date: createdAt);
+  }
+}
+
+/// Формирует стандартное имя файла для медицинского PDF-отчета:
+/// ФАМИЛИЯ_отчёт_дата (например: «Иванова_отчёт_06.09.2026»).
+///
+/// Если фамилия не указана, используется «Пациент_отчёт_дата».
+/// Дата форматируется как ДД.ММ.ГГГГ.
+String formatReportPdfFilename({
+  String? patientId,
+  DateTime? date,
+}) {
+  final rawPatient = (patientId ?? '').trim();
+  String surname = '';
+  if (rawPatient.isNotEmpty) {
+    // Извлекаем первое слово (фамилию пациента)
+    final words = rawPatient.split(RegExp(r'\s+'));
+    surname = words.isNotEmpty ? words.first : '';
+    // Очищаем от недопустимых в файловой системе символов и завершающих знаков препинания
+    surname = surname
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
+        .replaceAll(RegExp(r'[,;.]+$'), '');
+  }
+  if (surname.isEmpty) {
+    surname = 'Пациент';
+  }
+
+  final dt = date ?? DateTime.now();
+  final day = dt.day.toString().padLeft(2, '0');
+  final month = dt.month.toString().padLeft(2, '0');
+  final year = dt.year.toString();
+  final dateStr = '$day.$month.$year';
+
+  return '${surname}_отчёт_$dateStr';
 }

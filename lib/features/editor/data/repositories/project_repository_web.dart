@@ -406,8 +406,11 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     required ReportConfig config,
   }) async {
     final pdfBytes = await generateReportPdf(project: project, config: config);
-    final patient = config.patientId.isNotEmpty ? config.patientId : (project.patientId ?? 'report');
-    final docName = 'УЗИ_${patient}_${DateTime.now().millisecondsSinceEpoch}';
+    final patient = config.patientId.isNotEmpty ? config.patientId : (project.patientId ?? '');
+    final docName = formatReportPdfFilename(
+      patientId: patient,
+      date: config.createdAt,
+    );
 
     await Printing.layoutPdf(
       name: docName,
@@ -422,8 +425,14 @@ class ProjectRepositoryWebImpl implements ProjectRepository {
     required ProjectData project,
     required ReportConfig config,
   }) async {
+    final effectiveFilename = filename.trim().isNotEmpty
+        ? filename.trim()
+        : formatReportPdfFilename(
+            patientId: config.patientId.isNotEmpty ? config.patientId : project.patientId,
+            date: config.createdAt,
+          );
     final pdfBytes = await generateReportPdf(project: project, config: config);
-    final displayName = filename.endsWith('.pdf') ? filename : '$filename.pdf';
+    final displayName = effectiveFilename.endsWith('.pdf') ? effectiveFilename : '$effectiveFilename.pdf';
     triggerDownload(pdfBytes, displayName);
     return 'загрузки браузера';
   }
