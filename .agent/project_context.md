@@ -1,7 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
-- **Version**: 1.0.27 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
+- **Version**: 1.0.28 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x (Material 3)
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform medical drawing and annotation application designed for ultrasound (УЗИ) physicians, gynecologists, and surgeons. It functions as a medical scheme annotator, allowing clinicians to mark up standardized anatomical templates (pelvis, sagittal, uterus, abdominal wall, laparoscopic view) or imported scans with clinical pathology markers (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps, Indian Headdress/ГУИ). It features full off-screen rendering for export, interactive PDF report generation with printable medical forms, Cyrillic font support, user custom stamps organized into custom groups with hardware-accelerated image scaling and in-memory caching, clinic/doctor presets, multi-page canvases, and 100% offline client-side execution.
 - **Key Dependencies**:
@@ -111,13 +111,15 @@
   - In-memory caching and engine-level image downscaling ensure 0-lag addition and deletion of custom stamps without freezing the UI thread.
   - Automatic fallback protection ensures custom stamp selection does not get dropped/reset if slot or path references change.
 - **Offscreen & PDF Generation**: `OffscreenCanvasRenderer` uses pure `dart:ui` `PictureRecorder` to render high-DPI canvases independent of device viewport dimensions. `PdfReportGenerator` embeds Roboto Cyrillic fonts for clean Russian text rendering on all platforms. PDF filenames follow the standardized format: `ФАМИЛИЯ_отчёт_дата.pdf` (например, `Иванова_отчёт_06.09.2026.pdf`).
+- **App Icons Generation**: Application icon assets for all platforms (Android mipmaps, iOS AppIcon set, Web favicons & PWA maskable icons, Windows multi-size `app_icon.ico`) are maintained and re-generable via [tool/generate_all_icons.dart](file:///d:/projects/med_scheme/tool/generate_all_icons.dart) using the official sapphire ultrasound stylus branding.
 
 ---
 
 ## 6. Active Development Context
-- **Current Version**: 1.0.27
-- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`) are completely implemented and verified. 61/61 unit and widget tests pass, 0 lint issues.
+- **Current Version**: 1.0.28
+- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`) are completely implemented and verified.
 - **Recent Git Commits & Updates**:
+  - `1b778cf` — название пдф файлов формата Фамилия_отчёт_дата (v1.0.28)
   - `bde9608` — fix сброса кастомных штампов (v1.0.27)
   - `185919d` — Группировки кастомных штампов v4 (v1.0.26)
   - `45489f7` — Устранение 5-7 сек зависания при добавлении/удалении штампов: аппаратное C++ масштабирование и in-memory кэширование
