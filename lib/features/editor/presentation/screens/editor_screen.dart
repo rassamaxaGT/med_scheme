@@ -8,9 +8,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../../../core/di/injection.dart';
 import '../../../../core/utils/web_helper.dart';
 import '../../domain/entities/draw_action.dart';
 import '../../domain/entities/project_file_source.dart';
+import '../../domain/repositories/project_repository.dart';
 import '../../data/models/draw_action_model.dart';
 import '../bloc/draw_bloc.dart';
 import '../bloc/draw_event.dart';
@@ -23,28 +25,111 @@ import '../widgets/dialogs/print_export_dialog.dart';
 class EditorScreen extends StatefulWidget {
   const EditorScreen({super.key});
 
-  static void requestDirectoryWithNotice(BuildContext context) {
+  static void requestDirectoryWithNotice(
+    BuildContext context, {
+    bool isFirstRun = false,
+  }) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Выбор рабочей папки'),
-          content: const Text(
-            'Для сохранения и загрузки ваших проектов, а также экспорта размеченных схем, необходимо выбрать рабочую папку на устройстве.\n\n'
-            'В следующем системном окне выберите существующую папку или создайте новую (например, "МедРисунки") и подтвердите доступ кнопкой "Использовать эту папку".',
+          backgroundColor: const Color(0xFF1C2128),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
+          icon: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F4C81).withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.folder_special_rounded,
+              color: Color(0xFF58A6FF),
+              size: 28,
+            ),
+          ),
+          title: Text(
+            isFirstRun
+                ? 'Добро пожаловать в МедРисунок!'
+                : 'Выбор рабочей папки',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isFirstRun
+                    ? 'Для надёжного сохранения проектов (.meddraw), фоновых снимков и экспорта медицинских отчётов (PDF/PNG) выберите рабочую папку на устройстве.'
+                    : 'Для сохранения и загрузки ваших проектов, а также экспорта размеченных схем, необходимо выбрать рабочую папку на устройстве.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF8B949E),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1117),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF30363D)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: Color(0xFF58A6FF)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'В системном окне выберите существующую папку (например, «Документы») или создайте «МедРисунки» и подтвердите доступ кнопкой «Использовать эту папку».',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFC9D1D9),
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actionsPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
+              child: Text(
+                isFirstRun ? 'Позже' : 'Отмена',
+                style: const TextStyle(color: Color(0xFF8B949E)),
+              ),
             ),
-            ElevatedButton(
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F4C81),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               onPressed: () {
                 Navigator.pop(dialogContext);
                 context.read<ProjectBloc>().add(RequestDirectoryEvent());
               },
-              child: const Text('Выбрать'),
+              icon: const Icon(Icons.folder_open_rounded, size: 18),
+              label: const Text('Выбрать'),
             ),
           ],
         );
@@ -76,6 +161,7 @@ class _EditorScreenState extends State<EditorScreen> {
   String _appVersion = '';
   Timer? _autoSaveTimer;
   VoidCallback? _pendingActionAfterSave;
+  bool _hasInitialDirectoryLoaded = false;
 
   double _safeClamp(double value, double min, double max) {
     if (min > max) return min;
@@ -89,9 +175,38 @@ class _EditorScreenState extends State<EditorScreen> {
     _loadVersion();
     _loadToolboxPosition();
     _startAutoSaveTimer();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndRestoreDraft();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkAndRestoreDraft();
+      if (mounted) {
+        await _checkFirstRunAndroidDirectoryPrompt();
+      }
     });
+  }
+
+  Future<void> _checkFirstRunAndroidDirectoryPrompt() async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final prompted =
+          prefs.getBool('first_run_android_folder_prompted') ?? false;
+      if (prompted) return;
+
+      final projectRepo = getIt<ProjectRepository>();
+      final savedPath = await projectRepo.getSavedDirectoryPath();
+      if (savedPath != null && savedPath.isNotEmpty) {
+        await prefs.setBool('first_run_android_folder_prompted', true);
+        return;
+      }
+
+      await prefs.setBool('first_run_android_folder_prompted', true);
+      if (mounted) {
+        EditorScreen.requestDirectoryWithNotice(context, isFirstRun: true);
+      }
+    } catch (e) {
+      debugPrint('Ошибка проверки первого запуска папки: $e');
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -721,6 +836,28 @@ class _EditorScreenState extends State<EditorScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Проект успешно загружен!')),
                 );
+              } else if (state is ProjectDirectorySelected) {
+                if (_hasInitialDirectoryLoaded) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(Icons.check_circle_outline,
+                              color: Colors.greenAccent, size: 20),
+                          SizedBox(width: 10),
+                          Expanded(
+                              child: Text('Рабочая папка успешно выбрана!')),
+                        ],
+                      ),
+                      backgroundColor: Color(0xFF161B22),
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                }
+                _hasInitialDirectoryLoaded = true;
+              } else if (state is ProjectDirectoryNotSelected) {
+                _hasInitialDirectoryLoaded = true;
               } else if (state is ProjectError) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(

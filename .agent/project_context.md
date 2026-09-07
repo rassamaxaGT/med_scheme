@@ -112,6 +112,9 @@
   - Automatic fallback protection ensures custom stamp selection does not get dropped/reset if slot or path references change.
 - **Offscreen & PDF Generation**: `OffscreenCanvasRenderer` uses pure `dart:ui` `PictureRecorder` to render high-DPI canvases independent of device viewport dimensions. `PdfReportGenerator` embeds Roboto Cyrillic fonts for clean Russian text rendering on all platforms. PDF filenames follow the standardized format: `ФАМИЛИЯ_отчёт_дата.pdf` (например, `Иванова_отчёт_06.09.2026.pdf`).
 - **App Icons Generation**: Application icon assets for all platforms (Android mipmaps, iOS AppIcon set, Web favicons & PWA maskable icons, Windows multi-size `app_icon.ico`) are maintained and re-generable via [tool/generate_all_icons.dart](file:///d:/projects/med_scheme/tool/generate_all_icons.dart) using the official sapphire ultrasound stylus branding.
+- **Android Platform Customizations**:
+  - Screen Orientation: Locked to landscape both at the native Android OS level via `android:screenOrientation="sensorLandscape"` in [AndroidManifest.xml](file:///d:/projects/med_scheme/android/app/src/main/AndroidManifest.xml) and at the Flutter framework level via `SystemChrome.setPreferredOrientations` in [main.dart](file:///d:/projects/med_scheme/lib/main.dart).
+  - First-Run Folder Setup: On initial launch on Android, if no working directory is selected, an interactive dialog («Добро пожаловать в МедРисунок!») prompts the clinician to configure their storage folder via Storage Access Framework (SAF) with single-tap access to the system folder selector.
 
 ---
 
