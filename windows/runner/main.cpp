@@ -1,4 +1,4 @@
-#include <flutter/dart_project.h>
+﻿#include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
@@ -27,9 +27,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"МедРисунок", origin, size)) {
+  if (!window.Create(L"\u041C\u0435\u0434\u0420\u0438\u0441\u0443\u043D\u043E\u043A - \u0423\u0417\u0418 \u0420\u0435\u0434\u0430\u043A\u0442\u043E\u0440", origin, size)) {
     return EXIT_FAILURE;
   }
+  ::SetWindowTextW(window.GetHandle(), L"\u041C\u0435\u0434\u0420\u0438\u0441\u0443\u043D\u043E\u043A - \u0423\u0417\u0418 \u0420\u0435\u0434\u0430\u043A\u0442\u043E\u0440");
   window.SetQuitOnClose(true);
 
   ::MSG msg;

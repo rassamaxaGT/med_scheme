@@ -1,4 +1,4 @@
-; Inno Setup Script for МедРисунок (MedRisunok)
+﻿; Inno Setup Script for МедРисунок (MedRisunok)
 ; Requires Inno Setup 6+
 
 #define MyAppName "МедРисунок"
