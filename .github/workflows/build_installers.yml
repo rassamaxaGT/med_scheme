@@ -98,11 +98,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install dependencies
-        run: |
-          flutter pub get
-          cd ios && pod install && cd ..
-
       - name: Build iOS Unsigned IPA
         run: |
           chmod +x scripts/build_ios_unsigned.sh
