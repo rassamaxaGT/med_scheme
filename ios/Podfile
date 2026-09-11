@@ -1,3 +1,6 @@
+# Fast CocoaPods CDN mirror (bypasses slow/hanging cdn.cocoapods.org)
+source 'https://cdn.jsdelivr.net/cocoa/'
+
 # Standard Flutter Podfile with explicit iOS platform version
 platform :ios, '13.0'
 
