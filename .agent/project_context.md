@@ -1,7 +1,7 @@
 # Project Context Map: МедРисунок — УЗИ Редактор (med_scheme)
 
 ## 1. Executive Summary & Tech Stack
-- **Version**: 1.0.28 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
+- **Version**: 1.0.30 (Defined in [pubspec.yaml](file:///d:/projects/med_scheme/pubspec.yaml))
 - **Language & Framework**: Dart 3.x (SDK `^3.11.3`), Flutter 3.x (Material 3)
 - **Primary Purpose**: «МедРисунок» (MedDraw) is a specialized cross-platform medical drawing and annotation application designed for ultrasound (УЗИ) physicians, gynecologists, and surgeons. It functions as a medical scheme annotator, allowing clinicians to mark up standardized anatomical templates (pelvis, sagittal, uterus, abdominal wall, laparoscopic view) or imported scans with clinical pathology markers (endometriosis, myomas, IUDs, adhesions, follicles, bowel infiltrates, polyps, Indian Headdress/ГУИ). It features full off-screen rendering for export, interactive PDF report generation with printable medical forms, Cyrillic font support, user custom stamps organized into custom groups with hardware-accelerated image scaling and in-memory caching, clinic/doctor presets, multi-page canvases, and 100% offline client-side execution.
 - **Key Dependencies**:
@@ -89,7 +89,7 @@
 - **Run Web App Locally**: `flutter run -d chrome`
 - **Build Production Web Target**: `flutter build web`
 - **Build Production Android Target**: `flutter build apk`
-- **Run Automated Test Suites**: `flutter test` (60/60 tests passing in [test/](file:///d:/projects/med_scheme/test))
+- **Run Automated Test Suites**: `flutter test` (63/63 tests passing in [test/](file:///d:/projects/med_scheme/test))
 - **Static Lint Analysis**: `flutter analyze` (0 issues)
 - **Format Code**: `dart format .`
 - **Vercel Deploy Pipeline**: `.\deploy.ps1` (PowerShell script compiling web release and deploying to Vercel).
@@ -119,9 +119,11 @@
 ---
 
 ## 6. Active Development Context
-- **Current Version**: 1.0.28
-- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`) are completely implemented and verified.
+- **Current Version**: 1.0.30
+- **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`), Android landscape lock & first-run SAF folder prompt are completely implemented and verified.
 - **Recent Git Commits & Updates**:
+  - `1c93e17` — альбомная ориентация и запрос на папку при запуске (v1.0.30)
+  - `d26e635` — иконка и билд апк (v1.0.29)
   - `1b778cf` — название пдф файлов формата Фамилия_отчёт_дата (v1.0.28)
   - `bde9608` — fix сброса кастомных штампов (v1.0.27)
   - `185919d` — Группировки кастомных штампов v4 (v1.0.26)

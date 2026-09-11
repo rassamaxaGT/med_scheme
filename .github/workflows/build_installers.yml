@@ -1,0 +1,115 @@
+name: Build Installers (Android, Windows, iOS)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # ----------------------------------------------------
+  # 1. Android Build
+  # ----------------------------------------------------
+  build-android:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Universal APK
+        run: flutter build apk --release
+
+      - name: Build Split per ABI APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk dist/android/MedRisunok_universal.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/android/MedRisunok_arm64.apk
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APKs
+          path: dist/android/*
+
+  # ----------------------------------------------------
+  # 2. Windows Build
+  # ----------------------------------------------------
+  build-windows:
+    name: Build Windows Installer & ZIP
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Package Inno Setup and Portable ZIP
+        shell: pwsh
+        run: |
+          ./scripts/build_windows.ps1
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Packages
+          path: dist/windows/*
+
+  # ----------------------------------------------------
+  # 3. iOS Build (Unsigned IPA)
+  # ----------------------------------------------------
+  build-ios:
+    name: Build iOS Unsigned IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          cd ios && pod install && cd ..
+
+      - name: Build iOS Unsigned IPA
+        run: |
+          chmod +x scripts/build_ios_unsigned.sh
+          ./scripts/build_ios_unsigned.sh
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-Unsigned-IPA
+          path: dist/ios/*
