@@ -122,6 +122,11 @@
 - **Current Version**: 1.0.30
 - **Current Status**: Core editor, multi-canvas workflow, clinical markers, custom stamp groups v4 with in-memory caching and engine scaling, stamp fallback protection, clinic/doctor presets, Cyrillic PDF reports with standardized filename generation (`ФАМИЛИЯ_отчёт_дата.pdf`), Android landscape lock & first-run SAF folder prompt are completely implemented and verified.
 - **Recent Git Commits & Updates**:
+  - `e985ab9` — Повышен iOS deployment target до 15.0 для совместимости с Flutter
+  - `5b17622` — Переключение CocoaPods на GitHub Specs вместо CDN
+  - `7ebb68e` — Использование быстрого зеркала jsdelivr для CocoaPods
+  - `14e994a` — Добавлен ios/Podfile с платформой iOS 13.0
+  - `d04cb22` — Пайплайн сборки установщиков для Android, Windows и iOS
   - `1c93e17` — альбомная ориентация и запрос на папку при запуске (v1.0.30)
   - `d26e635` — иконка и билд апк (v1.0.29)
   - `1b778cf` — название пдф файлов формата Фамилия_отчёт_дата (v1.0.28)
@@ -132,6 +137,11 @@
   - `5d18cf6` — Fix QuotaExceededError and lag in custom stamp groups on web (v1.0.25)
   - `a2b1cfe` — Группировки кастомных штампов v3 (v1.0.25)
 - **Key Working Files**:
+  - [.github/workflows/build_installers.yml](file:///d:/projects/med_scheme/.github/workflows/build_installers.yml)
+  - [scripts/build_windows.ps1](file:///d:/projects/med_scheme/scripts/build_windows.ps1)
+  - [scripts/build_android.ps1](file:///d:/projects/med_scheme/scripts/build_android.ps1)
+  - [scripts/build_ios_unsigned.sh](file:///d:/projects/med_scheme/scripts/build_ios_unsigned.sh)
+  - [INSTALLATION_GUIDE.md](file:///d:/projects/med_scheme/INSTALLATION_GUIDE.md)
   - [custom_stamps_service.dart](file:///d:/projects/med_scheme/lib/features/editor/data/services/custom_stamps_service.dart)
   - [draw_bloc.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/bloc/draw_bloc.dart)
   - [canvas_widget.dart](file:///d:/projects/med_scheme/lib/features/editor/presentation/widgets/canvas/canvas_widget.dart)

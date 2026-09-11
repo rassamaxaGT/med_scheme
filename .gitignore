@@ -15,6 +15,7 @@
 migrate_working_dir/
 /custom_stamps/
 /dist/
+/installers/
 
 # IntelliJ related
 *.iml
